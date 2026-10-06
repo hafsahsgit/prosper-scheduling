@@ -1,0 +1,7 @@
+{
+  "cleanUrls": true,
+  "rewrites": [
+    { "source": "/payment-tracker", "destination": "/payment_tracker.html" },
+    { "source": "/payment_tracker", "destination": "/payment_tracker.html" }
+  ]
+}
