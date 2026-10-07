@@ -5,8 +5,8 @@
  */
 
 (function () {
-    const SUPABASE_URL = "https://enweiyslfehpvvhidayv.supabase.co";
-    const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImVud2VpeXNsZmVocHZ2aGlkYXl2Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTEyMDA4NDYsImV4cCI6MjEwNjc3Njg0Nn0.q6B2B9ce7peGzuAUSCxxO-40xBwvsBOuEfbwBP8w3fo";
+    const SUPABASE_URL = "https://vaglvmzknswfrjgnrcce.supabase.co";
+    const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InZhZ2x2bXprbnN3ZnJqZ25yY2NlIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTEyNjk2NjEsImV4cCI6MjEwNjg0NTY2MX0.yxpR4hxppfLeJej5Y-XD5vnvt1trPfUM7-Kt3uAj6J4";
 
     let supabaseClient = null;
 

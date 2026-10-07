@@ -22,8 +22,8 @@
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <script>
     (function () {
-        const SUPABASE_URL = "https://enweiyslfehpvvhidayv.supabase.co";
-        const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImVud2VpeXNsZmVocHZ2aGlkYXl2Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTEyMDA4NDYsImV4cCI6MjEwNjc3Njg0Nn0.q6B2B9ce7peGzuAUSCxxO-40xBwvsBOuEfbwBP8w3fo";
+        const SUPABASE_URL = "https://vaglvmzknswfrjgnrcce.supabase.co";
+        const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InZhZ2x2bXprbnN3ZnJqZ25yY2NlIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTEyNjk2NjEsImV4cCI6MjEwNjg0NTY2MX0.yxpR4hxppfLeJej5Y-XD5vnvt1trPfUM7-Kt3uAj6J4";
 
         let supabaseClient = null;
 
@@ -1004,8 +1004,8 @@
                 <input type="text" id="parentSearchInput" oninput="renderParentDatabase()" placeholder="Search parent name, phone, email, or child..." class="bg-slate-800 border border-slate-700 text-white rounded-lg px-3 py-1.5 w-full sm:w-80 focus:border-indigo-500 focus:outline-none">
                 <div class="flex items-center space-x-2">
                     <select id="parentStatusFilter" onchange="renderParentDatabase()" class="bg-slate-800 border border-slate-700 text-white rounded-lg px-2.5 py-1.5 focus:border-indigo-500 focus:outline-none">
-                        <option value="ALL">All Statuses</option>
-                        <option value="ACTIVE" selected>Active Parents</option>
+                        <option value="ALL" selected>All Statuses</option>
+                        <option value="ACTIVE">Active Parents</option>
                         <option value="INACTIVE">Inactive Parents</option>
                     </select>
                 </div>
@@ -7246,37 +7246,48 @@ Please let us know if you have any questions!`;
             appState.parents = [];
         }
 
-        // Auto-seed initial parents from student records if empty
-        if (!appState.parents || appState.parents.length === 0) {
-            const parentMap = new Map();
-            appState.students.forEach((s, idx) => {
-                const pName = (s.parent_name || '').trim();
-                if (!pName) return;
-                const pKey = pName.toLowerCase();
-                if (!parentMap.has(pKey)) {
-                    parentMap.set(pKey, {
-                        id: 'PAR-' + String(100 + parentMap.size + 1),
-                        name: pName,
-                        relationship: 'Mother',
-                        phone: s.whatsapp || '',
-                        email: `${pName.toLowerCase().replace(/[^a-z0-9]/g, '')}@example.com`,
-                        address: 'London, United Kingdom',
-                        student_ids: [s.id],
-                        status: 'ACTIVE',
-                        notes: 'Parent of ' + s.child_name,
-                        created_at: new Date().toISOString().split('T')[0],
-                        updated_at: new Date().toISOString().split('T')[0]
-                    });
-                } else {
-                    const existing = parentMap.get(pKey);
-                    if (!existing.student_ids.includes(s.id)) {
-                        existing.student_ids.push(s.id);
-                    }
-                }
-            });
-            appState.parents = Array.from(parentMap.values());
-            try { localStorage.setItem(DB_KEY_PARENTS, JSON.stringify(appState.parents)); } catch(e){}
-        }
+        autoSyncParentsFromRoster();
+    }
+
+    function autoSyncParentsFromRoster() {
+        if (!appState.students || appState.students.length === 0) return;
+        
+        const parentMap = new Map();
+        (appState.parents || []).forEach(p => {
+            if (p && p.name) parentMap.set(p.name.toLowerCase().trim(), p);
+        });
+
+        appState.students.forEach(s => {
+            const pName = (s.parent_name || '').trim();
+            if (!pName) return;
+            const key = pName.toLowerCase();
+            
+            let p = parentMap.get(key);
+            if (!p) {
+                p = {
+                    id: 'PAR-' + Math.floor(1000 + Math.random() * 9000),
+                    name: pName,
+                    relationship: 'Mother',
+                    phone: s.whatsapp || '',
+                    email: `${pName.toLowerCase().replace(/[^a-z0-9]/g, '')}@example.com`,
+                    address: 'London, United Kingdom',
+                    student_ids: [s.id],
+                    status: (s.status || '').toUpperCase() === 'INACTIVE' ? 'INACTIVE' : 'ACTIVE',
+                    notes: `Parent of ${s.child_name}`,
+                    created_at: new Date().toISOString().split('T')[0],
+                    updated_at: new Date().toISOString().split('T')[0]
+                };
+                parentMap.set(key, p);
+                if (window.SupabaseEngine) window.SupabaseEngine.saveParent(p);
+            } else {
+                if (!p.student_ids) p.student_ids = [];
+                if (!p.student_ids.includes(s.id)) p.student_ids.push(s.id);
+                if (!p.phone && s.whatsapp) p.phone = s.whatsapp;
+            }
+        });
+
+        appState.parents = Array.from(parentMap.values());
+        try { localStorage.setItem(DB_KEY_PARENTS, JSON.stringify(appState.parents)); } catch(e){}
     }
 
     function renderParentDatabase() {
