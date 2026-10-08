@@ -8026,12 +8026,18 @@ Emmanuel Eze\tChief Eze\t+447812999005\tTeacher Sharon\tFriday\t04:00:pm\tPiano\
         console.log("⚡ Supabase Cloud Data Loaded on startup:", cloudData);
         if (!cloudData) return;
         if (Array.isArray(cloudData.parents) && cloudData.parents.length > 0) {
-            appState.parents = cloudData.parents;
+            const parentMap = new Map();
+            (appState.parents || []).forEach(p => { if (p && p.id) parentMap.set(p.id, p); });
+            cloudData.parents.forEach(cp => { if (cp && cp.id) parentMap.set(cp.id, cp); });
+            appState.parents = Array.from(parentMap.values());
             try { localStorage.setItem(DB_KEY_PARENTS, JSON.stringify(appState.parents)); } catch(e){}
             renderParentDatabase();
         }
         if (Array.isArray(cloudData.students) && cloudData.students.length > 0) {
-            appState.students = cloudData.students;
+            const studentMap = new Map();
+            (appState.students || []).forEach(s => { if (s && s.id) studentMap.set(s.id, s); });
+            cloudData.students.forEach(cs => { if (cs && cs.id) studentMap.set(cs.id, cs); });
+            appState.students = Array.from(studentMap.values());
             try { localStorage.setItem(DB_KEY_STUDENTS, JSON.stringify(appState.students)); } catch(e){}
             renderStudentProfiles();
             renderCenterTable();
