@@ -361,8 +361,22 @@
                     .from('attendance_logs')
                     .upsert(cleaned, { onConflict: 'id' })
                     .select();
-                if (error) console.error("Error saving attendance log to Supabase:", error);
-                else console.log("⚡ Attendance log saved to Supabase:", cleaned.student_name, cleaned.status);
+                if (error) {
+                    console.error("Error saving attendance log to Supabase:", error);
+                    if (error.code === '23503' && cleaned.student_id) {
+                        console.warn("Retrying attendance log save with student_id=null due to FK constraint...");
+                        cleaned.student_id = null;
+                        const retryRes = await supabaseClient
+                            .from('attendance_logs')
+                            .upsert(cleaned, { onConflict: 'id' })
+                            .select();
+                        if (retryRes.error) console.error("Retry failed:", retryRes.error);
+                        else console.log("⚡ Attendance log saved with student_id=null:", cleaned.student_name, cleaned.status);
+                        return retryRes.data;
+                    }
+                } else {
+                    console.log("⚡ Attendance log saved to Supabase:", cleaned.student_name, cleaned.status);
+                }
                 return data;
             } catch(e) { console.error("Supabase attendance log save error:", e); return null; }
         },

@@ -4197,6 +4197,18 @@
     // -------------------------------------------------------------------------
     // UNMARKED PAST LESSONS (AUTOMATIC ROLL-FORWARD TO NEXT DAY)
     // -------------------------------------------------------------------------
+    function isStudentNameMatch(name1, name2) {
+        if (!name1 || !name2) return false;
+        const s1 = String(name1).toLowerCase().trim();
+        const s2 = String(name2).toLowerCase().trim();
+        if (s1 === s2) return true;
+        if (s1.length > 2 && s2.length > 2 && (s1.includes(s2) || s2.includes(s1))) return true;
+        const words1 = s1.split(/\s+/).filter(w => w.length > 2);
+        const words2 = s2.split(/\s+/).filter(w => w.length > 2);
+        if (words1.length === 0 || words2.length === 0) return false;
+        return words1.some(w => words2.includes(w));
+    }
+
     function getUnmarkedPastLessons() {
         const unmarked = [];
         // Look back over the past 7 days (yesterday = 1 day ago up to 7 days ago)
@@ -4207,7 +4219,7 @@
 
             // 1. Regular active students scheduled on that past day
             (appState.students || []).forEach(s => {
-                if (s.status !== 'ACTIVE') return;
+                if (!s || s.status !== 'ACTIVE') return;
                 if (!matchesDay(s.days, pastDayCode)) return;
 
                 // Check if an attendance log exists for this student on this past date
@@ -4219,13 +4231,13 @@
                     const logStatus = String(l.status || '').toUpperCase().trim();
                     if (!logStatus || logStatus === 'UNMARKED' || logStatus === 'PENDING') return false;
 
-                    const sChild = String(s.child_name || '').toLowerCase().trim();
-                    const lName = String(l.student_name || '').toLowerCase().trim();
-                    const lStdId = String(l.student_id || '').toLowerCase().trim();
-                    const sId = String(s.id || '').toLowerCase().trim();
+                    const sChild = String(s.child_name || '').trim();
+                    const lName = String(l.student_name || '').trim();
+                    const lStdId = String(l.student_id || '').trim();
+                    const sId = String(s.id || '').trim();
 
-                    const matchStd = (sId && lStdId && sId === lStdId) ||
-                                     (sChild && lName && (sChild === lName || sChild.includes(lName) || lName.includes(sChild)));
+                    const matchStd = (sId && lStdId && sId.toLowerCase() === lStdId.toLowerCase()) ||
+                                     isStudentNameMatch(sChild, lName);
                     return matchStd;
                 });
 
@@ -4258,7 +4270,10 @@
                 if (!trName || trName.toLowerCase().includes('trial student')) return;
 
                 const dateStr = tr.reschedule_date || tr.scheduled_date || '';
-                if (!matchesDay(dateStr, pastDayCode) && !dateStr.includes(pastDate)) return;
+                const isExactDateMatch = dateStr.includes(pastDate);
+                const isDayMatch = !dateStr.includes('-') && matchesDay(dateStr, pastDayCode);
+                if (!isExactDateMatch && !isDayMatch) return;
+
                 const trId = tr.id || ('resch_' + trIdx);
 
                 const hasLog = (appState.attendance_logs || []).some(l => {
@@ -4269,13 +4284,11 @@
                     const logStatus = String(l.status || '').toUpperCase().trim();
                     if (!logStatus || logStatus === 'UNMARKED' || logStatus === 'PENDING') return false;
 
-                    const trNameLower = trName.toLowerCase();
-                    const lName = String(l.student_name || '').toLowerCase().trim();
-                    const lStdId = String(l.student_id || '').toLowerCase().trim();
-                    const trIdLower = String(trId).toLowerCase().trim();
+                    const lName = String(l.student_name || '').trim();
+                    const lStdId = String(l.student_id || '').trim();
 
-                    const matchStd = (trIdLower && lStdId && trIdLower === lStdId) ||
-                                     (trNameLower && lName && (trNameLower === lName || trNameLower.includes(lName) || lName.includes(trNameLower)));
+                    const matchStd = (trId && lStdId && String(trId).toLowerCase() === lStdId.toLowerCase()) ||
+                                     isStudentNameMatch(trName, lName);
                     return matchStd;
                 });
 
@@ -4307,16 +4320,23 @@
 
     function markPastAttendance(studentId, pastDate, status, childNameOpt, teacherOpt) {
         const normDate = String(pastDate || '').split('T')[0].trim();
-        const s = appState.students.find(x => (x.id && studentId && x.id.toLowerCase() === studentId.toLowerCase()) || 
-                                              (x.child_name && childNameOpt && x.child_name.toLowerCase().trim() === childNameOpt.toLowerCase().trim()));
-        const tr = appState.trials.find(x => (x.id && studentId && x.id === studentId) || 
-                                            (x.student_name && ((studentId && x.student_name === studentId) || (childNameOpt && x.student_name.toLowerCase().trim() === childNameOpt.toLowerCase().trim()))));
-        const childName = childNameOpt || (s ? s.child_name : (tr ? tr.student_name : studentId));
+        const stdIdStr = String(studentId || '').trim();
+        const childStr = String(childNameOpt || '').trim();
+
+        const s = (appState.students || []).find(x => 
+            (x && x.id && stdIdStr && String(x.id).toLowerCase().trim() === stdIdStr.toLowerCase()) || 
+            (x && x.child_name && childStr && isStudentNameMatch(x.child_name, childStr))
+        );
+        const tr = (appState.trials || []).find(x => 
+            (x && x.id && stdIdStr && String(x.id).toLowerCase().trim() === stdIdStr.toLowerCase()) || 
+            (x && x.student_name && ((stdIdStr && isStudentNameMatch(x.student_name, stdIdStr)) || (childStr && isStudentNameMatch(x.student_name, childStr))))
+        );
+        const childName = childStr || (s ? s.child_name : (tr ? tr.student_name : stdIdStr));
         const teacherName = teacherOpt || (s ? s.teacher : (tr ? tr.teacher : 'Unassigned'));
         if (!childName) return;
 
         const targetChildLower = childName.toLowerCase().trim();
-        const targetStdIdLower = (studentId || (s ? s.id : '')).toLowerCase().trim();
+        const targetStdIdLower = String(studentId || (s ? s.id : '')).toLowerCase().trim();
 
         // Clear any previous entry for this student on that date
         appState.attendance_logs = (appState.attendance_logs || []).filter(l => {
@@ -4326,14 +4346,16 @@
             const lName = String(l.student_name || '').toLowerCase().trim();
             const lStdId = String(l.student_id || '').toLowerCase().trim();
             const isMatch = (targetStdIdLower && lStdId && targetStdIdLower === lStdId) ||
-                            (targetChildLower && lName && (targetChildLower === lName || targetChildLower.includes(lName) || lName.includes(targetChildLower)));
+                            (targetChildLower && lName && isStudentNameMatch(targetChildLower, lName));
             return !isMatch;
         });
 
-        const logStatus = (status === 'DONE' || status === 'PRESENT') ? 'PRESENT' : 'ABSENT';
+        const statusUpper = String(status || '').toUpperCase().trim();
+        const logStatus = (statusUpper === 'DONE' || statusUpper === 'PRESENT' || statusUpper === 'YES') ? 'PRESENT' : 'ABSENT';
+
         const newLog = {
             id: 'log_' + Date.now() + '_' + Math.random().toString(36).substr(2, 4),
-            student_id: s ? s.id : (tr && tr.id ? tr.id : studentId),
+            student_id: s ? String(s.id) : (tr && tr.id ? String(tr.id) : stdIdStr),
             student_name: childName,
             parent_name: s ? s.parent_name : (tr ? tr.parent_name : ''),
             whatsapp: s ? s.whatsapp : (tr ? tr.whatsapp : ''),
@@ -4351,13 +4373,13 @@
         try { localStorage.setItem(DB_KEY_LOGS, JSON.stringify(appState.attendance_logs)); } catch(e){}
 
         recomputeSystemAuditStats();
-        renderLessonDashboardKPIs();
-        renderLessonCards();
-        renderUnattendedTab();
-        renderStudentProfiles();
-        renderAttendanceRegister();
-        renderAttendanceHoursSummary();
-        renderTeachersWorkloadMatrix();
+        if (typeof renderLessonDashboardKPIs === 'function') renderLessonDashboardKPIs();
+        if (typeof renderLessonCards === 'function') renderLessonCards();
+        if (typeof renderUnattendedTab === 'function') renderUnattendedTab();
+        if (typeof renderStudentProfiles === 'function') renderStudentProfiles();
+        if (typeof renderAttendanceRegister === 'function') renderAttendanceRegister();
+        if (typeof renderAttendanceHoursSummary === 'function') renderAttendanceHoursSummary();
+        if (typeof renderTeachersWorkloadMatrix === 'function') renderTeachersWorkloadMatrix();
 
         const toastStatus = logStatus === 'PRESENT' ? 'Attended (Done) ✓' : 'Missed (Absent) ✕';
         const hourMsg = logStatus === 'PRESENT' 
