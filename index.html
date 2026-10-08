@@ -2686,7 +2686,12 @@
         } else {
             if (errEl) {
                 errEl.classList.remove('hidden');
-                errEl.textContent = 'Invalid username or password. Try username "prosperwork" & password "prosper2023".';
+                errEl.textContent = 'Invalid username or password. Please check your credentials.';
+            }
+            const passInp = document.getElementById('authPasswordInput');
+            if (passInp) {
+                passInp.value = '';
+                passInp.focus();
             }
             return false;
         }
@@ -8158,12 +8163,13 @@ Emmanuel Eze\tChief Eze\t+447812999005\tTeacher Sharon\tFriday\t04:00:pm\tPiano\
             renderLessonCards();
             renderTeachersWorkloadMatrix();
         }
-        if (Array.isArray(cloudData.reschedules) && cloudData.reschedules.length > 0) {
-            const cloudResch = cloudData.reschedules;
-            const reschMap = new Map();
-            (appState.trials || []).forEach(r => { if (r && r.id) reschMap.set(r.id, r); });
-            cloudResch.forEach(cr => { if (cr && cr.id) reschMap.set(cr.id, cr); });
-            appState.trials = Array.from(reschMap.values());
+        if (Array.isArray(cloudData.reschedules)) {
+            const activeCloudResch = cloudData.reschedules.filter(cr => {
+                if (!cr) return false;
+                const name = String(cr.student_name || cr.child_name || '').toLowerCase();
+                return !name.includes('trial student');
+            });
+            appState.trials = activeCloudResch;
             appState.rescheduledList = appState.trials;
             try {
                 localStorage.setItem(DB_KEY_TRIALS, JSON.stringify(appState.trials));
@@ -8172,27 +8178,15 @@ Emmanuel Eze\tChief Eze\t+447812999005\tTeacher Sharon\tFriday\t04:00:pm\tPiano\
             renderCenterTable();
             if (typeof renderUnattendedTab === 'function') renderUnattendedTab();
         }
-        if (Array.isArray(cloudData.attendance_logs) && cloudData.attendance_logs.length > 0) {
+        if (Array.isArray(cloudData.attendance_logs)) {
             const cloudLogs = cloudData.attendance_logs.map(enrichAttendanceLog);
             const logMap = new Map();
             cloudLogs.forEach(cl => {
                 if (cl && cl.id) {
-                    const datePart = String(cl.date || '').split('T')[0].trim();
-                    const stdKey = String(cl.student_id || cl.student_name || '').toLowerCase().trim();
                     logMap.set(cl.id, cl);
-                    logMap.set(`${stdKey}_${datePart}`, cl);
                 }
             });
-            (appState.attendance_logs || []).forEach(l => {
-                if (l && l.id && !logMap.has(l.id)) {
-                    const datePart = String(l.date || '').split('T')[0].trim();
-                    const stdKey = String(l.student_id || l.student_name || '').toLowerCase().trim();
-                    if (!logMap.has(`${stdKey}_${datePart}`)) {
-                        logMap.set(l.id, l);
-                    }
-                }
-            });
-            appState.attendance_logs = Array.from(new Set(logMap.values()));
+            appState.attendance_logs = Array.from(logMap.values());
             try { localStorage.setItem(DB_KEY_LOGS, JSON.stringify(appState.attendance_logs)); } catch(e){}
             if (typeof renderUnattendedTab === 'function') renderUnattendedTab();
             if (typeof renderAttendanceRegister === 'function') renderAttendanceRegister();
