@@ -103,6 +103,37 @@
             };
         }
 
+        function cleanAttendanceLogPayload(log) {
+            if (!log) return null;
+            let sId = String(log.student_id || '');
+            if (sId && window.appState && Array.isArray(window.appState.students)) {
+                const found = window.appState.students.some(s => String(s.id).toLowerCase() === sId.toLowerCase());
+                if (!found) {
+                    const foundByName = window.appState.students.find(s => 
+                        (s.child_name && log.student_name && s.child_name.toLowerCase() === String(log.student_name).toLowerCase())
+                    );
+                    if (foundByName) {
+                        sId = String(foundByName.id);
+                    } else {
+                        sId = null;
+                    }
+                }
+            } else if (!sId) {
+                sId = null;
+            }
+
+            return {
+                id: String(log.id || ('LOG-' + Math.floor(100000 + Math.random() * 900000))),
+                student_id: sId,
+                student_name: String(log.student_name || log.child_name || 'Student'),
+                date: String(log.date || new Date().toISOString().split('T')[0]),
+                status: String(log.status || 'PRESENT').toUpperCase(),
+                marked_by: String(log.marked_by || log.admin || 'Admin'),
+                notes: String(log.notes || ''),
+                created_at: log.created_at || new Date().toISOString()
+            };
+        }
+
         function initSupabase() {
             if (window.supabase && typeof window.supabase.createClient === 'function') {
                 try {
@@ -151,6 +182,10 @@
                 .on('postgres_changes', { event: '*', schema: 'public', table: 'payment_transactions' }, (payload) => {
                     console.log("🔄 Realtime Payment Update received:", payload);
                     if (typeof window.onRealtimePaymentUpdate === 'function') window.onRealtimePaymentUpdate(payload);
+                })
+                .on('postgres_changes', { event: '*', schema: 'public', table: 'attendance_logs' }, (payload) => {
+                    console.log("🔄 Realtime Attendance Log Update received:", payload);
+                    if (typeof window.onRealtimeAttendanceLogUpdate === 'function') window.onRealtimeAttendanceLogUpdate(payload);
                 })
                 .subscribe((status) => {
                     console.log("Supabase Realtime Channel Status:", status);
@@ -243,20 +278,43 @@
                 } catch(e) { console.error("Supabase payment delete error:", e); return null; }
             },
 
+            async saveAttendanceLog(logData) {
+                if (!supabaseClient) return null;
+                const cleaned = cleanAttendanceLogPayload(logData);
+                if (!cleaned) return null;
+                try {
+                    const { data, error } = await supabaseClient.from('attendance_logs').upsert(cleaned, { onConflict: 'id' }).select();
+                    if (error) console.error("Error saving attendance log to Supabase:", error);
+                    else console.log("⚡ Attendance log saved to Supabase:", cleaned.student_name, cleaned.status);
+                    return data;
+                } catch(e) { console.error("Supabase attendance log save error:", e); return null; }
+            },
+
+            async deleteAttendanceLog(logId) {
+                if (!supabaseClient || !logId) return null;
+                try {
+                    const { data, error } = await supabaseClient.from('attendance_logs').delete().eq('id', String(logId));
+                    if (error) console.error("Error deleting attendance log from Supabase:", error);
+                    return data;
+                } catch(e) { console.error("Supabase attendance log delete error:", e); return null; }
+            },
+
             async fetchAllData() {
                 if (!supabaseClient) return null;
                 try {
-                    const [stdRes, parRes, resRes, payRes] = await Promise.all([
+                    const [stdRes, parRes, resRes, payRes, logRes] = await Promise.all([
                         supabaseClient.from('students').select('*'),
                         supabaseClient.from('parents').select('*'),
                         supabaseClient.from('reschedules').select('*'),
-                        supabaseClient.from('payment_transactions').select('*')
+                        supabaseClient.from('payment_transactions').select('*'),
+                        supabaseClient.from('attendance_logs').select('*')
                     ]);
                     return {
                         students: stdRes.data || [],
                         parents: parRes.data || [],
                         reschedules: resRes.data || [],
-                        payments: payRes.data || []
+                        payments: payRes.data || [],
+                        attendance_logs: logRes.data || []
                     };
                 } catch(e) { console.error("Supabase fetch error:", e); return null; }
             }
@@ -5885,6 +5943,7 @@
         const deletedLog = appState.attendance_logs.find(l => l.id === logId);
         appState.attendance_logs = appState.attendance_logs.filter(l => l.id !== logId);
         try { localStorage.setItem(DB_KEY_LOGS, JSON.stringify(appState.attendance_logs)); } catch(e) {}
+        pushUpdateToCloud('delete_attendance', deletedLog || { id: logId });
         recomputeSystemAuditStats();
         if (appState.activeStudentHistoryId) {
             renderStudentHistoryLogs(appState.activeStudentHistoryId);
@@ -6516,6 +6575,12 @@ Please let us know if you have any questions!`;
                     window.SupabaseEngine.deleteReschedule(payload.id || payload);
                 } else if (actionType === 'save_payment') {
                     window.SupabaseEngine.savePayment(payload);
+                } else if (actionType === 'delete_payment' || actionType === 'deletePayment') {
+                    window.SupabaseEngine.deletePayment(payload.id || payload);
+                } else if (actionType === 'recordAttendance' || actionType === 'attendance_log' || actionType === 'save_attendance') {
+                    window.SupabaseEngine.saveAttendanceLog(payload);
+                } else if (actionType === 'delete_attendance' || actionType === 'delete_log' || actionType === 'deleteAttendance') {
+                    window.SupabaseEngine.deleteAttendanceLog(payload.id || payload);
                 }
             } catch(sErr) { console.warn("Supabase push error:", sErr); }
         }
@@ -7820,6 +7885,35 @@ Emmanuel Eze\tChief Eze\t+447812999005\tTeacher Sharon\tFriday\t04:00:pm\tPiano\
         showToast("⚡ Realtime Update: Roster Data Synced");
     };
 
+    function enrichAttendanceLog(log) {
+        if (!log) return log;
+        const enriched = Object.assign({}, log);
+        let student = null;
+        if (window.appState && Array.isArray(window.appState.students)) {
+            if (enriched.student_id) {
+                student = window.appState.students.find(s => String(s.id).toLowerCase() === String(enriched.student_id).toLowerCase());
+            }
+            if (!student && enriched.student_name) {
+                student = window.appState.students.find(s => s.child_name && s.child_name.toLowerCase() === String(enriched.student_name).toLowerCase());
+            }
+        }
+        if (student) {
+            enriched.student_id = enriched.student_id || student.id;
+            enriched.student_name = enriched.student_name || student.child_name;
+            enriched.parent_name = enriched.parent_name || student.parent_name;
+            enriched.whatsapp = enriched.whatsapp || student.whatsapp;
+            enriched.teacher = enriched.teacher || student.teacher;
+            enriched.admin = enriched.admin || student.admin;
+            enriched.time = enriched.time || student.time;
+        }
+        if (enriched.date && !enriched.day) {
+            try {
+                enriched.day = new Date(enriched.date + 'T12:00:00').toLocaleDateString('en-US', { weekday: 'short' });
+            } catch(e){}
+        }
+        return enriched;
+    }
+
     window.onRealtimeRescheduleUpdate = function(payload) {
         console.log("⚡ Realtime Reschedule Payload:", payload);
         if (!payload || !payload.eventType) return;
@@ -7842,6 +7936,38 @@ Emmanuel Eze\tChief Eze\t+447812999005\tTeacher Sharon\tFriday\t04:00:pm\tPiano\
         showToast("⚡ Realtime Update: Reschedules Synced");
     };
 
+    window.onRealtimeAttendanceLogUpdate = function(payload) {
+        console.log("⚡ Realtime Attendance Log Payload:", payload);
+        if (!payload || !payload.eventType) return;
+        if (payload.eventType === 'DELETE') {
+            const delId = payload.old ? payload.old.id : null;
+            if (delId) {
+                appState.attendance_logs = appState.attendance_logs.filter(l => l.id !== delId);
+            }
+        } else if (payload.new) {
+            const updated = enrichAttendanceLog(payload.new);
+            const idx = appState.attendance_logs.findIndex(l => l.id === updated.id);
+            if (idx !== -1) {
+                appState.attendance_logs[idx] = Object.assign({}, appState.attendance_logs[idx], updated);
+            } else {
+                appState.attendance_logs.unshift(updated);
+            }
+        }
+        try { localStorage.setItem(DB_KEY_LOGS, JSON.stringify(appState.attendance_logs)); } catch(e){}
+        recomputeSystemAuditStats();
+        if (typeof renderLessonDashboardKPIs === 'function') renderLessonDashboardKPIs();
+        if (typeof renderLessonCards === 'function') renderLessonCards();
+        if (typeof renderUnattendedTab === 'function') renderUnattendedTab();
+        if (typeof renderStudentProfiles === 'function') renderStudentProfiles();
+        if (typeof renderAttendanceRegister === 'function') renderAttendanceRegister();
+        if (typeof renderAttendanceHoursSummary === 'function') renderAttendanceHoursSummary();
+        if (typeof renderTeachersWorkloadMatrix === 'function') renderTeachersWorkloadMatrix();
+        if (appState.activeStudentHistoryId && typeof renderStudentHistoryLogs === 'function') {
+            renderStudentHistoryLogs(appState.activeStudentHistoryId);
+        }
+        showToast("⚡ Realtime Update: Attendance Synced");
+    };
+
     window.onInitialCloudDataLoaded = function(cloudData) {
         console.log("⚡ Supabase Cloud Data Loaded on startup:", cloudData);
         if (!cloudData) return;
@@ -7862,6 +7988,13 @@ Emmanuel Eze\tChief Eze\t+447812999005\tTeacher Sharon\tFriday\t04:00:pm\tPiano\
             appState.rescheduledList = cloudData.reschedules;
             try { localStorage.setItem(DB_KEY_RESCHEDULED, JSON.stringify(appState.rescheduledList)); } catch(e){}
             renderCenterTable();
+        }
+        if (Array.isArray(cloudData.attendance_logs) && cloudData.attendance_logs.length > 0) {
+            appState.attendance_logs = cloudData.attendance_logs.map(enrichAttendanceLog);
+            try { localStorage.setItem(DB_KEY_LOGS, JSON.stringify(appState.attendance_logs)); } catch(e){}
+            if (typeof renderUnattendedTab === 'function') renderUnattendedTab();
+            if (typeof renderAttendanceRegister === 'function') renderAttendanceRegister();
+            if (typeof renderAttendanceHoursSummary === 'function') renderAttendanceHoursSummary();
         }
         updateRosterCounts();
         recomputeSystemAuditStats();

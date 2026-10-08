@@ -86,6 +86,37 @@
         };
     }
 
+    function cleanAttendanceLogPayload(log) {
+        if (!log) return null;
+        let sId = String(log.student_id || '');
+        if (sId && window.appState && Array.isArray(window.appState.students)) {
+            const found = window.appState.students.some(s => String(s.id).toLowerCase() === sId.toLowerCase());
+            if (!found) {
+                const foundByName = window.appState.students.find(s => 
+                    (s.child_name && log.student_name && s.child_name.toLowerCase() === String(log.student_name).toLowerCase())
+                );
+                if (foundByName) {
+                    sId = String(foundByName.id);
+                } else {
+                    sId = null;
+                }
+            }
+        } else if (!sId) {
+            sId = null;
+        }
+
+        return {
+            id: String(log.id || ('LOG-' + Math.floor(100000 + Math.random() * 900000))),
+            student_id: sId,
+            student_name: String(log.student_name || log.child_name || 'Student'),
+            date: String(log.date || new Date().toISOString().split('T')[0]),
+            status: String(log.status || 'PRESENT').toUpperCase(),
+            marked_by: String(log.marked_by || log.admin || 'Admin'),
+            notes: String(log.notes || ''),
+            created_at: log.created_at || new Date().toISOString()
+        };
+    }
+
     function initSupabase() {
         if (window.supabase && typeof window.supabase.createClient === 'function') {
             try {
@@ -156,6 +187,16 @@
                     console.log("🔄 Realtime Payment Update received:", payload);
                     if (typeof window.onRealtimePaymentUpdate === 'function') {
                         window.onRealtimePaymentUpdate(payload);
+                    }
+                }
+            )
+            .on(
+                'postgres_changes',
+                { event: '*', schema: 'public', table: 'attendance_logs' },
+                (payload) => {
+                    console.log("🔄 Realtime Attendance Log Update received:", payload);
+                    if (typeof window.onRealtimeAttendanceLogUpdate === 'function') {
+                        window.onRealtimeAttendanceLogUpdate(payload);
                     }
                 }
             )
@@ -275,20 +316,49 @@
             } catch(e) { console.error("Supabase payment delete error:", e); return null; }
         },
 
+        async saveAttendanceLog(logData) {
+            if (!supabaseClient) return null;
+            const cleaned = cleanAttendanceLogPayload(logData);
+            if (!cleaned) return null;
+            try {
+                const { data, error } = await supabaseClient
+                    .from('attendance_logs')
+                    .upsert(cleaned, { onConflict: 'id' })
+                    .select();
+                if (error) console.error("Error saving attendance log to Supabase:", error);
+                else console.log("⚡ Attendance log saved to Supabase:", cleaned.student_name, cleaned.status);
+                return data;
+            } catch(e) { console.error("Supabase attendance log save error:", e); return null; }
+        },
+
+        async deleteAttendanceLog(logId) {
+            if (!supabaseClient || !logId) return null;
+            try {
+                const { data, error } = await supabaseClient
+                    .from('attendance_logs')
+                    .delete()
+                    .eq('id', String(logId));
+                if (error) console.error("Error deleting attendance log from Supabase:", error);
+                return data;
+            } catch(e) { console.error("Supabase attendance log delete error:", e); return null; }
+        },
+
         async fetchAllData() {
             if (!supabaseClient) return null;
             try {
-                const [stdRes, parRes, resRes, payRes] = await Promise.all([
+                const [stdRes, parRes, resRes, payRes, logRes] = await Promise.all([
                     supabaseClient.from('students').select('*'),
                     supabaseClient.from('parents').select('*'),
                     supabaseClient.from('reschedules').select('*'),
-                    supabaseClient.from('payment_transactions').select('*')
+                    supabaseClient.from('payment_transactions').select('*'),
+                    supabaseClient.from('attendance_logs').select('*')
                 ]);
                 return {
                     students: stdRes.data || [],
                     parents: parRes.data || [],
                     reschedules: resRes.data || [],
-                    payments: payRes.data || []
+                    payments: payRes.data || [],
+                    attendance_logs: logRes.data || []
                 };
             } catch(e) { console.error("Supabase fetch error:", e); return null; }
         }

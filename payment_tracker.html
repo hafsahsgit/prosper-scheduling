@@ -135,6 +135,9 @@
               .on('postgres_changes', { event: '*', schema: 'public', table: 'payment_transactions' }, (payload) => {
                   if (typeof window.onRealtimePaymentUpdate === 'function') window.onRealtimePaymentUpdate(payload);
               })
+              .on('postgres_changes', { event: '*', schema: 'public', table: 'attendance_logs' }, (payload) => {
+                  if (typeof window.onRealtimeAttendanceLogUpdate === 'function') window.onRealtimeAttendanceLogUpdate(payload);
+              })
               .subscribe();
       }
 
@@ -206,20 +209,48 @@
               } catch(e) { return null; }
           },
 
+          async deletePayment(paymentId) {
+              if (!supabaseClient || !paymentId) return null;
+              try {
+                  const { data, error } = await supabaseClient.from('payment_transactions').delete().eq('id', String(paymentId));
+                  return data;
+              } catch(e) { return null; }
+          },
+
+          async saveAttendanceLog(logData) {
+              if (!supabaseClient) return null;
+              const cleaned = cleanAttendanceLogPayload(logData);
+              if (!cleaned) return null;
+              try {
+                  const { data, error } = await supabaseClient.from('attendance_logs').upsert(cleaned, { onConflict: 'id' }).select();
+                  return data;
+              } catch(e) { return null; }
+          },
+
+          async deleteAttendanceLog(logId) {
+              if (!supabaseClient || !logId) return null;
+              try {
+                  const { data, error } = await supabaseClient.from('attendance_logs').delete().eq('id', String(logId));
+                  return data;
+              } catch(e) { return null; }
+          },
+
           async fetchAllData() {
               if (!supabaseClient) return null;
               try {
-                  const [stdRes, parRes, resRes, payRes] = await Promise.all([
+                  const [stdRes, parRes, resRes, payRes, logRes] = await Promise.all([
                       supabaseClient.from('students').select('*'),
                       supabaseClient.from('parents').select('*'),
                       supabaseClient.from('reschedules').select('*'),
-                      supabaseClient.from('payment_transactions').select('*')
+                      supabaseClient.from('payment_transactions').select('*'),
+                      supabaseClient.from('attendance_logs').select('*')
                   ]);
                   return {
                       students: stdRes.data || [],
                       parents: parRes.data || [],
                       reschedules: resRes.data || [],
-                      payments: payRes.data || []
+                      payments: payRes.data || [],
+                      attendance_logs: logRes.data || []
                   };
               } catch(e) { return null; }
           }
