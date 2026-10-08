@@ -4546,11 +4546,17 @@
             const card = document.createElement('div');
             card.className = 'conservatory-panel bg-gradient-to-br from-slate-900/90 via-slate-900/80 to-pink-950/40 border-2 border-pink-500/50 p-4 sm:p-5 flex flex-col justify-between hover:border-pink-400 transition-all shadow-2xl relative overflow-hidden';
             
-            const existingLog = appState.attendance_logs.find(l => 
-                (l.student_id === tr.id || (l.student_name && l.student_name.toLowerCase() === tr.student_name.toLowerCase())) && 
-                l.status !== 'RESCHEDULED' &&
-                l.date === targetDate
-            );
+            const existingLog = (appState.attendance_logs || []).find(l => {
+                if (!l || l.status === 'RESCHEDULED') return false;
+                const lDate = String(l.date || '').split('T')[0].trim();
+                if (lDate !== targetDate) return false;
+                const lStdId = l.student_id ? String(l.student_id).trim() : '';
+                const trId = tr.id ? String(tr.id).trim() : '';
+                const lName = l.student_name ? String(l.student_name).trim() : '';
+                const trName = (tr.student_name || tr.child_name || '').trim();
+                return (trId && lStdId && trId.toLowerCase() === lStdId.toLowerCase()) || 
+                       (trName && lName && isStudentNameMatch(trName, lName));
+            });
 
             let attendanceSectionHtml = '';
             if (existingLog && existingLog.status === 'PRESENT') {
@@ -4672,8 +4678,17 @@
             const card = document.createElement('div');
             card.className = 'conservatory-panel p-4 sm:p-5 flex flex-col justify-between hover:border-indigo-500/40 transition-all shadow-xl';
 
-            const sLogs = appState.attendance_logs.filter(l => l.student_id === s.id);
-            const todayLog = sLogs.find(l => l.status !== 'RESCHEDULED' && String(l.date || '').split('T')[0].trim() === targetDate);
+            const todayLog = (appState.attendance_logs || []).find(l => {
+                if (!l || l.status === 'RESCHEDULED') return false;
+                const lDate = String(l.date || '').split('T')[0].trim();
+                if (lDate !== targetDate) return false;
+                const lStdId = l.student_id ? String(l.student_id).trim() : '';
+                const sId = s.id ? String(s.id).trim() : '';
+                const lName = l.student_name ? String(l.student_name).trim() : '';
+                const sName = (s.child_name || s.name || '').trim();
+                return (sId && lStdId && sId.toLowerCase() === lStdId.toLowerCase()) || 
+                       (sName && lName && isStudentNameMatch(sName, lName));
+            });
 
             let attendanceSectionHtml = '';
             if (todayLog && todayLog.status === 'PRESENT') {
@@ -4809,7 +4824,8 @@
     }
 
     function markQuickAttendance(studentId, status) {
-        const s = appState.students.find(x => x.id === studentId);
+        const stdIdStr = String(studentId || '').trim();
+        const s = (appState.students || []).find(x => x && x.id && String(x.id).trim() === stdIdStr);
         if (!s) return;
 
         const filterInfo = getTargetDateFromLessonFilter();
@@ -4819,53 +4835,73 @@
         appState.attendance_logs = (appState.attendance_logs || []).filter(l => {
             if (!l) return true;
             const lDate = String(l.date || '').split('T')[0].trim();
-            return !(l.student_id === s.id && lDate === targetDate);
+            if (lDate !== targetDate) return true;
+            
+            const lStdId = l.student_id ? String(l.student_id).trim() : '';
+            const lName = l.student_name ? String(l.student_name).trim() : '';
+            const isMatch = (lStdId && stdIdStr && lStdId.toLowerCase() === stdIdStr.toLowerCase()) || 
+                            isStudentNameMatch(s.child_name, lName);
+            return !isMatch;
         });
 
-        const logStatus = status === 'NO' ? 'ABSENT' : 'PRESENT';
+        const statusUpper = String(status || '').toUpperCase().trim();
+        const logStatus = (statusUpper === 'NO' || statusUpper === 'ABSENT') ? 'ABSENT' : 'PRESENT';
         const newLog = {
             id: 'log_' + Date.now() + '_' + Math.random().toString(36).substr(2, 4),
-            student_id: s.id,
+            student_id: String(s.id),
             student_name: s.child_name,
-            parent_name: s.parent_name,
+            parent_name: s.parent_name || '',
             whatsapp: s.whatsapp || '',
-            teacher: s.teacher,
+            teacher: s.teacher || '',
             admin: s.admin || 'Office',
             date: targetDate,
             day: targetDay,
-            time: s.time,
+            time: s.time || '',
             status: logStatus,
-            notes: status === 'NO' ? 'Marked Absent from Lesson Dashboard' : 'Confirmed Complete & Done'
+            notes: logStatus === 'ABSENT' ? 'Marked Absent from Lesson Dashboard' : 'Confirmed Complete & Done',
+            timestamp: new Date().toISOString()
         };
 
         appState.attendance_logs.unshift(newLog);
         try { localStorage.setItem(DB_KEY_LOGS, JSON.stringify(appState.attendance_logs)); } catch(e) {}
 
         recomputeSystemAuditStats();
-        renderLessonCards();
-        renderAttendanceRegister();
-        renderAttendanceHoursSummary();
+        if (typeof renderLessonDashboardKPIs === 'function') renderLessonDashboardKPIs();
+        if (typeof renderLessonCards === 'function') renderLessonCards();
+        if (typeof renderAttendanceRegister === 'function') renderAttendanceRegister();
+        if (typeof renderAttendanceHoursSummary === 'function') renderAttendanceHoursSummary();
         if (typeof renderUnattendedTab === 'function') renderUnattendedTab();
 
-        const toastStatus = status === 'NO' ? 'Absent ✕' : 'Done ✓';
+        const toastStatus = logStatus === 'ABSENT' ? 'Absent ✕' : 'Done ✓';
         showToast(`${s.child_name} marked ${toastStatus}! Buttons updated.`);
         pushUpdateToCloud('attendance_log', newLog);
     }
 
     function undoQuickAttendance(studentId) {
+        const stdIdStr = String(studentId || '').trim();
+        const s = (appState.students || []).find(x => x && x.id && String(x.id).trim() === stdIdStr);
         const filterInfo = getTargetDateFromLessonFilter();
         const targetDate = filterInfo.isoDate;
 
         const deletedLogs = (appState.attendance_logs || []).filter(l => {
             if (!l) return false;
             const lDate = String(l.date || '').split('T')[0].trim();
-            return l.student_id === studentId && (lDate === targetDate || lDate === getDayInfo(0).isoDate);
+            if (lDate !== targetDate && lDate !== getDayInfo(0).isoDate) return false;
+            const lStdId = l.student_id ? String(l.student_id).trim() : '';
+            const lName = l.student_name ? String(l.student_name).trim() : '';
+            return (lStdId && stdIdStr && lStdId.toLowerCase() === stdIdStr.toLowerCase()) || 
+                   (s && isStudentNameMatch(s.child_name, lName));
         });
 
         appState.attendance_logs = (appState.attendance_logs || []).filter(l => {
             if (!l) return true;
             const lDate = String(l.date || '').split('T')[0].trim();
-            return !(l.student_id === studentId && (lDate === targetDate || lDate === getDayInfo(0).isoDate));
+            if (lDate !== targetDate && lDate !== getDayInfo(0).isoDate) return true;
+            const lStdId = l.student_id ? String(l.student_id).trim() : '';
+            const lName = l.student_name ? String(l.student_name).trim() : '';
+            const isMatch = (lStdId && stdIdStr && lStdId.toLowerCase() === stdIdStr.toLowerCase()) || 
+                            (s && isStudentNameMatch(s.child_name, lName));
+            return !isMatch;
         });
 
         try { localStorage.setItem(DB_KEY_LOGS, JSON.stringify(appState.attendance_logs)); } catch(e) {}
