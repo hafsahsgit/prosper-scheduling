@@ -117,13 +117,19 @@
         };
     }
 
+    let realtimeChannel = null;
+
     function initSupabase() {
         if (window.supabase && typeof window.supabase.createClient === 'function') {
             try {
-                supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+                supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+                    auth: { persistSession: false },
+                    realtime: { heartbeatIntervalMs: 2500 }
+                });
                 console.log("⚡ Supabase Realtime Engine Connected!");
                 subscribeRealtimeEvents();
                 fetchInitialCloudData();
+                setupMobileLivenessPolling();
                 return true;
             } catch (err) {
                 console.warn("Supabase init warning:", err);
@@ -147,8 +153,13 @@
 
     function subscribeRealtimeEvents() {
         if (!supabaseClient) return;
+        try {
+            if (realtimeChannel) {
+                supabaseClient.removeChannel(realtimeChannel);
+            }
+        } catch(e){}
 
-        const channel = supabaseClient
+        realtimeChannel = supabaseClient
             .channel('prosper-realtime-room')
             .on(
                 'postgres_changes',
@@ -202,7 +213,32 @@
             )
             .subscribe((status) => {
                 console.log("Supabase Realtime Channel Status:", status);
+                if (status === 'CLOSED' || status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
+                    setTimeout(() => {
+                        subscribeRealtimeEvents();
+                        fetchInitialCloudData();
+                    }, 2000);
+                }
             });
+    }
+
+    function setupMobileLivenessPolling() {
+        // Automatic REST poll every 8 seconds to ensure mobile phones with suspended WebSockets sync instantly
+        setInterval(() => {
+            fetchInitialCloudData();
+        }, 8000);
+
+        // Instant re-fetch & re-subscribe when user unlocks phone or switches back to tab
+        window.addEventListener('focus', () => {
+            fetchInitialCloudData();
+            subscribeRealtimeEvents();
+        });
+        document.addEventListener('visibilitychange', () => {
+            if (document.visibilityState === 'visible') {
+                fetchInitialCloudData();
+                subscribeRealtimeEvents();
+            }
+        });
     }
 
     // Export helpers to global window

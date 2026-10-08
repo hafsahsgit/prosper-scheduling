@@ -4638,7 +4638,7 @@
             card.className = 'conservatory-panel p-4 sm:p-5 flex flex-col justify-between hover:border-indigo-500/40 transition-all shadow-xl';
 
             const sLogs = appState.attendance_logs.filter(l => l.student_id === s.id);
-            const todayLog = sLogs.find(l => l.status !== 'RESCHEDULED' && l.date === targetDate);
+            const todayLog = sLogs.find(l => l.status !== 'RESCHEDULED' && String(l.date || '').split('T')[0].trim() === targetDate);
 
             let attendanceSectionHtml = '';
             if (todayLog && todayLog.status === 'PRESENT') {
@@ -4757,24 +4757,49 @@
         });
     }
 
+    function getTargetDateFromLessonFilter() {
+        const todayInfo = getDayInfo(0);
+        const tomInfo = getDayInfo(1);
+        if (appState.lessonFilter === 'tomorrow') {
+            return { isoDate: tomInfo.isoDate, short: tomInfo.short };
+        } else if (appState.lessonFilter && appState.lessonFilter !== 'all' && appState.lessonFilter !== 'today') {
+            for (let i = -7; i <= 7; i++) {
+                const info = getDayInfo(i);
+                if (info.short.toLowerCase() === appState.lessonFilter.toLowerCase().substring(0, 3)) {
+                    return { isoDate: info.isoDate, short: info.short };
+                }
+            }
+        }
+        return { isoDate: todayInfo.isoDate, short: todayInfo.short };
+    }
+
     function markQuickAttendance(studentId, status) {
         const s = appState.students.find(x => x.id === studentId);
         if (!s) return;
-        const todayInfo = getDayInfo(0);
 
-        appState.attendance_logs = appState.attendance_logs.filter(l => !(l.student_id === s.id && l.date === todayInfo.isoDate));
+        const filterInfo = getTargetDateFromLessonFilter();
+        const targetDate = filterInfo.isoDate;
+        const targetDay = filterInfo.short;
 
+        appState.attendance_logs = (appState.attendance_logs || []).filter(l => {
+            if (!l) return true;
+            const lDate = String(l.date || '').split('T')[0].trim();
+            return !(l.student_id === s.id && lDate === targetDate);
+        });
+
+        const logStatus = status === 'NO' ? 'ABSENT' : 'PRESENT';
         const newLog = {
-            id: 'log_' + Date.now(),
+            id: 'log_' + Date.now() + '_' + Math.random().toString(36).substr(2, 4),
             student_id: s.id,
             student_name: s.child_name,
             parent_name: s.parent_name,
             whatsapp: s.whatsapp || '',
             teacher: s.teacher,
-            date: todayInfo.isoDate,
-            day: todayInfo.short,
+            admin: s.admin || 'Office',
+            date: targetDate,
+            day: targetDay,
             time: s.time,
-            status: status === 'NO' ? 'ABSENT' : 'PRESENT',
+            status: logStatus,
             notes: status === 'NO' ? 'Marked Absent from Lesson Dashboard' : 'Confirmed Complete & Done'
         };
 
@@ -4785,6 +4810,7 @@
         renderLessonCards();
         renderAttendanceRegister();
         renderAttendanceHoursSummary();
+        if (typeof renderUnattendedTab === 'function') renderUnattendedTab();
 
         const toastStatus = status === 'NO' ? 'Absent ✕' : 'Done ✓';
         showToast(`${s.child_name} marked ${toastStatus}! Buttons updated.`);
@@ -4792,43 +4818,62 @@
     }
 
     function undoQuickAttendance(studentId) {
-        const todayInfo = getDayInfo(0);
-        const tomInfo = getDayInfo(1);
-        const targetDate = appState.lessonFilter === 'tomorrow' ? tomInfo.isoDate : todayInfo.isoDate;
+        const filterInfo = getTargetDateFromLessonFilter();
+        const targetDate = filterInfo.isoDate;
 
-        appState.attendance_logs = appState.attendance_logs.filter(l => !(l.student_id === studentId && (l.date === targetDate || l.date === todayInfo.isoDate)));
+        const deletedLogs = (appState.attendance_logs || []).filter(l => {
+            if (!l) return false;
+            const lDate = String(l.date || '').split('T')[0].trim();
+            return l.student_id === studentId && (lDate === targetDate || lDate === getDayInfo(0).isoDate);
+        });
+
+        appState.attendance_logs = (appState.attendance_logs || []).filter(l => {
+            if (!l) return true;
+            const lDate = String(l.date || '').split('T')[0].trim();
+            return !(l.student_id === studentId && (lDate === targetDate || lDate === getDayInfo(0).isoDate));
+        });
+
         try { localStorage.setItem(DB_KEY_LOGS, JSON.stringify(appState.attendance_logs)); } catch(e) {}
+
+        deletedLogs.forEach(dLog => {
+            pushUpdateToCloud('delete_attendance', dLog);
+        });
+
         recomputeSystemAuditStats();
         renderLessonCards();
         renderAttendanceRegister();
         renderAttendanceHoursSummary();
+        if (typeof renderUnattendedTab === 'function') renderUnattendedTab();
         showToast('Attendance status cleared — Done / No buttons restored');
     }
 
     function markReschAttendance(trId, studentName, status) {
         const tr = appState.trials.find(x => x.id === trId || x.student_name === studentName);
-        const todayInfo = getDayInfo(0);
-        const tomInfo = getDayInfo(1);
-        const targetDate = appState.lessonFilter === 'tomorrow' ? tomInfo.isoDate : todayInfo.isoDate;
-        const targetDay = appState.lessonFilter === 'tomorrow' ? tomInfo.short : todayInfo.short;
+        const filterInfo = getTargetDateFromLessonFilter();
+        const targetDate = filterInfo.isoDate;
+        const targetDay = filterInfo.short;
 
         // Clear existing log for this session if any
-        appState.attendance_logs = appState.attendance_logs.filter(l => {
+        appState.attendance_logs = (appState.attendance_logs || []).filter(l => {
+            if (!l) return true;
+            const lDate = String(l.date || '').split('T')[0].trim();
             const matchStudent = (trId && l.student_id === trId) || (studentName && l.student_name && l.student_name.toLowerCase() === studentName.toLowerCase());
-            return !(matchStudent && (l.date === targetDate || l.date === todayInfo.isoDate));
+            return !(matchStudent && (lDate === targetDate || lDate === getDayInfo(0).isoDate));
         });
 
+        const logStatus = status === 'NO' ? 'ABSENT' : 'PRESENT';
         const newLog = {
-            id: 'log_' + Date.now(),
+            id: 'log_' + Date.now() + '_' + Math.random().toString(36).substr(2, 4),
             student_id: tr ? (tr.id || 'resch_' + Date.now()) : 'resch_' + Date.now(),
             student_name: studentName,
             parent_name: tr ? tr.parent_name : 'Parent',
             whatsapp: tr ? (tr.whatsapp || '') : '',
             teacher: tr ? tr.teacher : 'Faculty',
+            admin: tr ? tr.admin : 'Office',
             date: targetDate,
             day: targetDay,
-            time: tr ? (tr.time || tr.reschedule_date) : 'Makeup Slot',
-            status: status === 'NO' ? 'ABSENT' : 'PRESENT',
+            time: tr ? (tr.time || tr.rescheduled_date || tr.reschedule_date) : 'Makeup Slot',
+            status: logStatus,
             notes: `Makeup Session: ${status === 'NO' ? 'Marked Absent' : 'Marked Done'}`
         };
 
@@ -4837,23 +4882,39 @@
 
         recomputeSystemAuditStats();
         renderLessonCards();
+        if (typeof renderUnattendedTab === 'function') renderUnattendedTab();
         showToast(`Makeup lesson for ${studentName} marked ${status === 'NO' ? 'Absent ✕' : 'Done ✓'}!`);
         pushUpdateToCloud('attendance_log', newLog);
     }
 
     function undoReschAttendance(trId, studentName) {
-        const todayInfo = getDayInfo(0);
-        const tomInfo = getDayInfo(1);
-        const targetDate = appState.lessonFilter === 'tomorrow' ? tomInfo.isoDate : todayInfo.isoDate;
+        const filterInfo = getTargetDateFromLessonFilter();
+        const targetDate = filterInfo.isoDate;
 
-        appState.attendance_logs = appState.attendance_logs.filter(l => {
+        const deletedLogs = (appState.attendance_logs || []).filter(l => {
+            if (!l) return false;
             const matchStudent = (trId && l.student_id === trId) || (studentName && l.student_name && l.student_name.toLowerCase() === studentName.toLowerCase());
-            const matchDate = l.date === targetDate || l.date === todayInfo.isoDate || (l.notes && l.notes.toLowerCase().includes('makeup session'));
+            const lDate = String(l.date || '').split('T')[0].trim();
+            const matchDate = lDate === targetDate || lDate === getDayInfo(0).isoDate || (l.notes && l.notes.toLowerCase().includes('makeup session'));
+            return matchStudent && matchDate;
+        });
+
+        appState.attendance_logs = (appState.attendance_logs || []).filter(l => {
+            if (!l) return true;
+            const matchStudent = (trId && l.student_id === trId) || (studentName && l.student_name && l.student_name.toLowerCase() === studentName.toLowerCase());
+            const lDate = String(l.date || '').split('T')[0].trim();
+            const matchDate = lDate === targetDate || lDate === getDayInfo(0).isoDate || (l.notes && l.notes.toLowerCase().includes('makeup session'));
             return !(matchStudent && matchDate);
         });
         try { localStorage.setItem(DB_KEY_LOGS, JSON.stringify(appState.attendance_logs)); } catch(e) {}
+
+        deletedLogs.forEach(dLog => {
+            pushUpdateToCloud('delete_attendance', dLog);
+        });
+
         recomputeSystemAuditStats();
         renderLessonCards();
+        if (typeof renderUnattendedTab === 'function') renderUnattendedTab();
         showToast('Rescheduled attendance cleared — Done / No buttons restored');
     }
 
@@ -7073,13 +7134,22 @@ Please let us know if you have any questions!`;
                         if (!syncedSuccess) {
                             mergeCloudSchedulesIntoState(cloudData.schedules);
                             mergeCloudReschedulesIntoState(cloudData.reschedules);
-                        if (cloudData.parents) mergeCloudParentsIntoState(cloudData.parents);
+                            if (cloudData.parents) mergeCloudParentsIntoState(cloudData.parents);
                             syncedSuccess = true;
                         }
                     }
                 }).catch(err => {
                     console.warn('Apps Script background GET notice:', err);
                 });
+            }
+
+            // 3. Supabase REST & Realtime Data Re-fetch (guarantees attendance logs & reschedules update even on mobile)
+            if (window.SupabaseEngine && typeof window.SupabaseEngine.fetchAllData === 'function') {
+                window.SupabaseEngine.fetchAllData().then(sData => {
+                    if (sData && typeof window.onInitialCloudDataLoaded === 'function') {
+                        window.onInitialCloudDataLoaded(sData);
+                    }
+                }).catch(err => console.warn("Supabase background sync notice:", err));
             }
 
             if (syncedSuccess) {
@@ -8000,7 +8070,21 @@ Emmanuel Eze\tChief Eze\t+447812999005\tTeacher Sharon\tFriday\t04:00:pm\tPiano\
             }
         } else if (payload.new) {
             const updated = enrichAttendanceLog(payload.new);
-            const idx = appState.attendance_logs.findIndex(l => l.id === updated.id);
+            const updatedDate = String(updated.date || '').split('T')[0].trim();
+            const updatedStdId = String(updated.student_id || '').toLowerCase().trim();
+            const updatedStdName = String(updated.student_name || '').toLowerCase().trim();
+
+            const idx = appState.attendance_logs.findIndex(l => {
+                if (!l) return false;
+                if (l.id && updated.id && String(l.id).toLowerCase() === String(updated.id).toLowerCase()) return true;
+                const lDate = String(l.date || '').split('T')[0].trim();
+                if (lDate !== updatedDate) return false;
+                const lStdId = String(l.student_id || '').toLowerCase().trim();
+                const lStdName = String(l.student_name || '').toLowerCase().trim();
+                return (updatedStdId && lStdId && updatedStdId === lStdId) ||
+                       (updatedStdName && lStdName && (updatedStdName === lStdName || updatedStdName.includes(lStdName) || lStdName.includes(updatedStdName)));
+            });
+
             if (idx !== -1) {
                 appState.attendance_logs[idx] = Object.assign({}, appState.attendance_logs[idx], updated);
             } else {
@@ -8061,9 +8145,24 @@ Emmanuel Eze\tChief Eze\t+447812999005\tTeacher Sharon\tFriday\t04:00:pm\tPiano\
         if (Array.isArray(cloudData.attendance_logs) && cloudData.attendance_logs.length > 0) {
             const cloudLogs = cloudData.attendance_logs.map(enrichAttendanceLog);
             const logMap = new Map();
-            (appState.attendance_logs || []).forEach(l => { if (l && l.id) logMap.set(l.id, l); });
-            cloudLogs.forEach(cl => { if (cl && cl.id) logMap.set(cl.id, cl); });
-            appState.attendance_logs = Array.from(logMap.values());
+            cloudLogs.forEach(cl => {
+                if (cl && cl.id) {
+                    const datePart = String(cl.date || '').split('T')[0].trim();
+                    const stdKey = String(cl.student_id || cl.student_name || '').toLowerCase().trim();
+                    logMap.set(cl.id, cl);
+                    logMap.set(`${stdKey}_${datePart}`, cl);
+                }
+            });
+            (appState.attendance_logs || []).forEach(l => {
+                if (l && l.id && !logMap.has(l.id)) {
+                    const datePart = String(l.date || '').split('T')[0].trim();
+                    const stdKey = String(l.student_id || l.student_name || '').toLowerCase().trim();
+                    if (!logMap.has(`${stdKey}_${datePart}`)) {
+                        logMap.set(l.id, l);
+                    }
+                }
+            });
+            appState.attendance_logs = Array.from(new Set(logMap.values()));
             try { localStorage.setItem(DB_KEY_LOGS, JSON.stringify(appState.attendance_logs)); } catch(e){}
             if (typeof renderUnattendedTab === 'function') renderUnattendedTab();
             if (typeof renderAttendanceRegister === 'function') renderAttendanceRegister();
