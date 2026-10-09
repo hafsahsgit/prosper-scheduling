@@ -4139,8 +4139,12 @@
             appState.trials = tr ? JSON.parse(tr) : [];
         } catch(e) { appState.trials = []; }
 
-        // Purge dummy or stale reschedules on startup and reset to 0
-        appState.trials = [];
+        // Filter out dummy or blacklisted reschedules
+        appState.trials = (appState.trials || []).filter(t => {
+            if (!t) return false;
+            const name = (t.student_name || t.child_name || '').trim().toLowerCase();
+            return name && !name.includes('trial student') && !name.includes('test student');
+        });
         try { 
             localStorage.setItem(DB_KEY_TRIALS, JSON.stringify(appState.trials)); 
             localStorage.setItem(DB_KEY_RESCHEDULED, JSON.stringify(appState.trials)); 
@@ -6583,10 +6587,15 @@ Please let us know if you have any questions!`;
 
             const newResch = {
                 id: 'resch_' + Date.now(),
+                student_id: s.id,
                 student_name: s.child_name,
                 parent_name: s.parent_name,
                 whatsapp: s.whatsapp || '',
+                days: newDay,
+                time: newTime,
                 reschedule_date: `${newDay} ${newTime}`,
+                rescheduled_date: reschExactDate || null,
+                original_slot: oldSlot,
                 scheduled_date: oldSlot,
                 teacher: newTeacher,
                 admin: chosenAdmin,

@@ -54,19 +54,34 @@
 
     function cleanReschedulePayload(r) {
         if (!r) return null;
+        
+        let dateVal = null;
+        const rawDate = r.rescheduled_date || r.reschedule_date || r.date || r.scheduled_date || '';
+        const matchIso = String(rawDate).match(/\d{4}-\d{2}-\d{2}/);
+        if (matchIso) {
+            dateVal = matchIso[0];
+        }
+
+        const rawDayTime = r.reschedule_date || r.rescheduled_date || '';
+        const dayVal = r.days || (rawDayTime ? String(rawDayTime).split(' ')[0] : 'Monday');
+        const timeVal = r.time || (rawDayTime ? String(rawDayTime).split(' ').slice(1).join(' ') : '05:00:pm');
+
+        const name = String(r.student_name || r.child_name || 'Student').trim();
+        const slug = name.toLowerCase().replace(/[^a-z0-9]/g, '');
+
         return {
-            id: String(r.id || ('RES-' + Math.floor(1000 + Math.random() * 9000))),
+            id: String(r.id || ('RES-' + slug + '-' + Date.now())),
             student_id: String(r.student_id || ''),
-            student_name: String(r.student_name || r.child_name || ''),
+            student_name: name,
             parent_name: String(r.parent_name || ''),
             whatsapp: String(r.whatsapp || ''),
-            teacher: String(r.teacher || ''),
-            days: String(r.days || ''),
-            time: String(r.time || ''),
-            original_slot: String(r.original_slot || ''),
-            rescheduled_date: r.rescheduled_date || r.reschedule_date || r.scheduled_date || null,
-            admin: String(r.admin || 'Not Yet Assigned'),
-            status: String(r.status || 'RESCHEDULED'),
+            teacher: String(r.teacher || 'Unassigned'),
+            days: String(dayVal),
+            time: String(timeVal),
+            original_slot: String(r.original_slot || r.scheduled_date || ''),
+            rescheduled_date: dateVal,
+            admin: String(r.admin || 'Office'),
+            status: String(r.status || 'CONFIRMED'),
             updated_at: new Date().toISOString()
         };
     }
