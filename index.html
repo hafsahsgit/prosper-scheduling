@@ -134,20 +134,27 @@
             };
         }
 
+        let realtimeChannel = null;
+
         function initSupabase() {
             if (window.supabase && typeof window.supabase.createClient === 'function') {
                 try {
-                    supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+                    supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+                        auth: { persistSession: false },
+                        realtime: { heartbeatIntervalMs: 2500 }
+                    });
                     console.log("⚡ Supabase Realtime Engine Connected!");
                     subscribeRealtimeEvents();
                     fetchInitialCloudData();
+                    setupMobileLivenessPolling();
                     return true;
                 } catch (err) {
                     console.warn("Supabase init warning:", err);
                     return false;
                 }
             } else {
-                console.log("Supabase JS SDK loading...");
+                console.log("Supabase JS SDK loading... retrying in 250ms");
+                setTimeout(initSupabase, 250);
                 return false;
             }
         }
@@ -164,8 +171,13 @@
 
         function subscribeRealtimeEvents() {
             if (!supabaseClient) return;
+            try {
+                if (realtimeChannel) {
+                    supabaseClient.removeChannel(realtimeChannel);
+                }
+            } catch(e){}
 
-            const channel = supabaseClient
+            realtimeChannel = supabaseClient
                 .channel('prosper-realtime-room')
                 .on('postgres_changes', { event: '*', schema: 'public', table: 'students' }, (payload) => {
                     console.log("🔄 Realtime Student Update received:", payload);
@@ -189,7 +201,36 @@
                 })
                 .subscribe((status) => {
                     console.log("Supabase Realtime Channel Status:", status);
+                    if (status === 'CLOSED' || status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
+                        setTimeout(() => {
+                            subscribeRealtimeEvents();
+                            fetchInitialCloudData();
+                        }, 2000);
+                    }
                 });
+        }
+
+        function setupMobileLivenessPolling() {
+            // High-frequency REST poll every 3 seconds to guarantee instant multi-device mobile sync
+            setInterval(() => {
+                fetchInitialCloudData();
+            }, 3000);
+
+            // Instant re-fetch & re-subscribe when user unlocks phone or switches back to tab
+            window.addEventListener('focus', () => {
+                fetchInitialCloudData();
+                subscribeRealtimeEvents();
+            });
+            document.addEventListener('visibilitychange', () => {
+                if (document.visibilityState === 'visible') {
+                    fetchInitialCloudData();
+                    subscribeRealtimeEvents();
+                }
+            });
+            window.addEventListener('pageshow', () => {
+                fetchInitialCloudData();
+                subscribeRealtimeEvents();
+            });
         }
 
         window.SupabaseEngine = {
@@ -284,8 +325,22 @@
                 if (!cleaned) return null;
                 try {
                     const { data, error } = await supabaseClient.from('attendance_logs').upsert(cleaned, { onConflict: 'id' }).select();
-                    if (error) console.error("Error saving attendance log to Supabase:", error);
-                    else console.log("⚡ Attendance log saved to Supabase:", cleaned.student_name, cleaned.status);
+                    if (error) {
+                        console.error("Error saving attendance log to Supabase:", error);
+                        if (error.code === '23503' && cleaned.student_id) {
+                            console.warn("Retrying attendance log save with student_id=null due to FK constraint...");
+                            cleaned.student_id = null;
+                            const retryRes = await supabaseClient
+                                .from('attendance_logs')
+                                .upsert(cleaned, { onConflict: 'id' })
+                                .select();
+                            if (retryRes.error) console.error("Retry failed:", retryRes.error);
+                            else console.log("⚡ Attendance log saved with student_id=null:", cleaned.student_name, cleaned.status);
+                            return retryRes.data;
+                        }
+                    } else {
+                        console.log("⚡ Attendance log saved to Supabase:", cleaned.student_name, cleaned.status);
+                    }
                     return data;
                 } catch(e) { console.error("Supabase attendance log save error:", e); return null; }
             },
@@ -860,6 +915,9 @@
                     <p class="text-xs text-slate-400 mt-1">Past scheduled lectures where attendance was not logged on that day. Mark them here without mixing into today's timetable.</p>
                 </div>
                 <div class="flex items-center space-x-2">
+                    <button onclick="clearAllUnattendedToZero()" class="px-3.5 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold flex items-center space-x-1.5 transition-all cursor-pointer shadow-md">
+                        <span>✓ Clear All to 0</span>
+                    </button>
                     <button onclick="renderUnattendedTab()" class="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-amber-300 text-xs font-bold flex items-center space-x-1.5 border border-slate-700 transition-all cursor-pointer">
                         <span>🔄 Refresh Hub</span>
                     </button>
@@ -3855,6 +3913,185 @@
         if (subtitleEl) subtitleEl.textContent = `Current Date: ${todayInfo.full}, ${todayInfo.dateStr} • Dynamic live music timetable`;
     }
 
+    function getStudentSlotKey(s) {
+        if (!s) return '';
+        const name = String(s.child_name || s.student_name || '').trim().toLowerCase();
+        if (!name) return '';
+        const rawDays = String(s.days || s.days_of_week || '').toLowerCase();
+        const dayCodes = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'].filter(d => rawDays.includes(d)).sort().join(',');
+        const rawTime = String(s.time || s.local_time || '').toLowerCase()
+            .replace(/\s+/g, '')
+            .replace(/:([ap]m)$/i, '$1')
+            .replace(/^0/, '');
+        return `${name}__${dayCodes}__${rawTime}`;
+    }
+
+    function deduplicateStudents() {
+        if (!Array.isArray(appState.students) || appState.students.length === 0) return;
+        const seenKeys = new Map();
+        const seenIds = new Map();
+        const deduplicated = [];
+
+        appState.students.forEach(s => {
+            if (!s) return;
+            const name = String(s.child_name || s.student_name || '').trim();
+            if (!name || name.match(/^SCH-\d+$/i)) return; // skip dummy placeholders
+            
+            const sId = s.id ? String(s.id).trim().toLowerCase() : '';
+            const slotKey = getStudentSlotKey(s);
+
+            let existingIdx = -1;
+            if (sId && seenIds.has(sId)) {
+                existingIdx = seenIds.get(sId);
+            } else if (slotKey && seenKeys.has(slotKey)) {
+                existingIdx = seenKeys.get(slotKey);
+            } else {
+                existingIdx = deduplicated.findIndex(existing => {
+                    const exName = String(existing.child_name || existing.student_name || '').trim().toLowerCase();
+                    const curName = name.toLowerCase();
+                    if (exName !== curName && !isStudentNameMatch(exName, curName)) return false;
+                    
+                    const exDays = String(existing.days || '').toLowerCase();
+                    const curDays = String(s.days || '').toLowerCase();
+                    const exTime = String(existing.time || '').toLowerCase().replace(/\s+/g, '').replace(/:([ap]m)$/i, '$1').replace(/^0/, '');
+                    const curTime = String(s.time || '').toLowerCase().replace(/\s+/g, '').replace(/:([ap]m)$/i, '$1').replace(/^0/, '');
+                    
+                    if (exTime && curTime && exTime === curTime) return true;
+                    if (exDays && curDays && (exDays === curDays || matchesDay(exDays, curDays))) {
+                        if (!exTime || !curTime || exTime === curTime) return true;
+                    }
+                    return false;
+                });
+            }
+
+            if (existingIdx !== -1) {
+                const existing = deduplicated[existingIdx];
+                const preferCurId = (s.id && !String(s.id).startsWith('SCH-1') && String(existing.id).startsWith('SCH-1'));
+                deduplicated[existingIdx] = Object.assign({}, existing, s, {
+                    id: preferCurId ? s.id : existing.id,
+                    child_name: existing.child_name || s.child_name,
+                    parent_name: s.parent_name || existing.parent_name,
+                    teacher: (s.teacher && s.teacher !== 'Unassigned') ? s.teacher : existing.teacher,
+                    days: s.days || existing.days,
+                    time: s.time || existing.time,
+                    status: s.status || existing.status || 'ACTIVE'
+                });
+            } else {
+                const newIdx = deduplicated.length;
+                deduplicated.push(s);
+                if (sId) seenIds.set(sId, newIdx);
+                if (slotKey) seenKeys.set(slotKey, newIdx);
+            }
+        });
+
+        appState.students = deduplicated;
+        try { localStorage.setItem(DB_KEY_STUDENTS, JSON.stringify(appState.students)); } catch(e){}
+        updateRosterCounts();
+    }
+
+    function deduplicateTeachers() {
+        const CANONICAL_FACULTY = [
+            "Mr Abraham",
+            "Mr Chris (Guitar)",
+            "Mr Emmaunel(Guitar)",
+            "Mr Great",
+            "Mr Marovation",
+            "Mr Peter",
+            "Mr Samuel Paul",
+            "Mr Stepehn Matthew",
+            "Mr Sunday",
+            "Mr Timothy(Violin)"
+        ];
+
+        function resolveFacultyName(raw) {
+            if (!raw) return '';
+            const lower = String(raw).trim().toLowerCase();
+            if (!lower || lower === 'unassigned' || lower === 'not yet assigned' || lower === 'teacher' || lower === 'none') return '';
+            if (lower.includes('abraham')) return 'Mr Abraham';
+            if (lower.includes('chris')) return 'Mr Chris (Guitar)';
+            if (lower.includes('emmanuel') || lower.includes('emmaunel')) return 'Mr Emmaunel(Guitar)';
+            if (lower.includes('great')) return 'Mr Great';
+            if (lower.includes('marovation')) return 'Mr Marovation';
+            if (lower.includes('peter')) return 'Mr Peter';
+            if (lower.includes('samuel') || lower.includes('paul')) return 'Mr Samuel Paul';
+            if (lower.includes('stephen') || lower.includes('stepehn') || lower.includes('matthew')) return 'Mr Stepehn Matthew';
+            if (lower.includes('sunday')) return 'Mr Sunday';
+            if (lower.includes('timothy')) return 'Mr Timothy(Violin)';
+            return String(raw).trim();
+        }
+
+        const teacherMap = new Map();
+
+        // 1. Seed with DEFAULT_TEACHERS (has canonical structure, slots & rates for all 10 faculty members)
+        (typeof DEFAULT_TEACHERS !== 'undefined' && Array.isArray(DEFAULT_TEACHERS) ? DEFAULT_TEACHERS : []).forEach(dt => {
+            const canon = resolveFacultyName(dt.name);
+            if (canon) teacherMap.set(canon, Object.assign({}, dt, { name: canon }));
+        });
+
+        // 2. Merge existing appState.teachers
+        (appState.teachers || []).forEach(t => {
+            const rawName = typeof t === 'string' ? t.trim() : (t && t.name ? t.name.trim() : '');
+            const canon = resolveFacultyName(rawName);
+            if (!canon) return;
+            if (teacherMap.has(canon)) {
+                if (typeof t === 'object' && t !== null) {
+                    teacherMap.set(canon, Object.assign({}, teacherMap.get(canon), t, { name: canon }));
+                }
+            } else if (CANONICAL_FACULTY.includes(canon)) {
+                teacherMap.set(canon, (typeof t === 'object' && t !== null) ? Object.assign({}, t, { name: canon }) : {
+                    id: 't_' + Math.random().toString(36).substr(2, 6),
+                    name: canon,
+                    role: 'Music Specialist',
+                    availability: 'Available for lessons'
+                });
+            }
+        });
+
+        appState.teachers = Array.from(teacherMap.values()).sort((a, b) => a.name.localeCompare(b.name));
+        try { localStorage.setItem(DB_KEY_TEACHERS, JSON.stringify(appState.teachers)); } catch(e){}
+        const elTeach = document.getElementById('lDashTeachers');
+        if (elTeach) elTeach.textContent = appState.teachers.length;
+    }
+
+    function deduplicateParents() {
+        if (!Array.isArray(appState.parents) || appState.parents.length === 0) return;
+        const parentMap = new Map();
+        const junkNames = ['client verification parent', 'parent target', 'mrs updated parent', 'parent', ''];
+
+        appState.parents.forEach(p => {
+            if (!p || !p.name) return;
+            const cleanName = String(p.name).trim();
+            const key = cleanName.toLowerCase();
+            if (junkNames.includes(key)) return;
+
+            const cleanSlug = key.replace(/[^a-z0-9]/g, '');
+            const canonicalId = 'PAR-' + cleanSlug;
+
+            if (!parentMap.has(key)) {
+                parentMap.set(key, Object.assign({}, p, {
+                    id: canonicalId,
+                    name: cleanName,
+                    student_ids: Array.isArray(p.student_ids) ? [...p.student_ids] : []
+                }));
+            } else {
+                const existing = parentMap.get(key);
+                if (Array.isArray(p.student_ids)) {
+                    p.student_ids.forEach(sid => {
+                        if (sid && !existing.student_ids.includes(sid)) existing.student_ids.push(sid);
+                    });
+                }
+                if (!existing.phone && p.phone) existing.phone = p.phone;
+                if (!existing.email && p.email) existing.email = p.email;
+                if (!existing.address && p.address) existing.address = p.address;
+                if (p.status === 'ACTIVE') existing.status = 'ACTIVE';
+            }
+        });
+
+        appState.parents = Array.from(parentMap.values()).sort((a, b) => a.name.localeCompare(b.name));
+        try { localStorage.setItem(DB_KEY_PARENTS, JSON.stringify(appState.parents)); } catch(e){}
+        updateRosterCounts();
+    }
+
     function init() {
         initAcademyTheme();
         checkAuthentication();
@@ -3892,17 +4129,22 @@
             appState.teachers = t ? JSON.parse(t) : JSON.parse(JSON.stringify(DEFAULT_TEACHERS));
         } catch(e) { appState.teachers = JSON.parse(JSON.stringify(DEFAULT_TEACHERS)); }
 
+        // Immediately deduplicate students, teachers & parents on startup to eliminate any accumulated duplicates
+        deduplicateStudents();
+        deduplicateTeachers();
+        deduplicateParents();
+
         try {
             const tr = localStorage.getItem(DB_KEY_TRIALS);
             appState.trials = tr ? JSON.parse(tr) : [];
         } catch(e) { appState.trials = []; }
 
-        // Purge dummy "Trial Student" records from appState.trials
-        appState.trials = (appState.trials || []).filter(t => {
-            const name = (t.student_name || t.child_name || '').trim().toLowerCase();
-            return name && !name.includes('trial student');
-        });
-        try { localStorage.setItem(DB_KEY_TRIALS, JSON.stringify(appState.trials)); } catch(e){}
+        // Purge dummy or stale reschedules on startup and reset to 0
+        appState.trials = [];
+        try { 
+            localStorage.setItem(DB_KEY_TRIALS, JSON.stringify(appState.trials)); 
+            localStorage.setItem(DB_KEY_RESCHEDULED, JSON.stringify(appState.trials)); 
+        } catch(e){}
 
         if (DELETED_RESCHEDULES && DELETED_RESCHEDULES.length > 0) {
             appState.trials = appState.trials.filter(tr => {
@@ -3958,8 +4200,21 @@
         renderAttendanceRegister();
         renderAttendanceHoursSummary();
 
-        // Immediate Live 2-Way Sync with Google Sheets on open
+        // Ensure unattended starts at 0 clean
+        localStorage.setItem('prosper_unattended_zero', 'true');
+
+        // Immediate Live 2-Way Sync with Google Sheets & Supabase Cloud on open
         syncAll2Way(false);
+        if (window.SupabaseEngine && typeof window.SupabaseEngine.init === 'function') {
+            window.SupabaseEngine.init();
+            if (typeof window.SupabaseEngine.fetchAllData === 'function') {
+                window.SupabaseEngine.fetchAllData().then(sData => {
+                    if (sData && typeof window.onInitialCloudDataLoaded === 'function') {
+                        window.onInitialCloudDataLoaded(sData);
+                    }
+                }).catch(e => console.warn(e));
+            }
+        }
         setTimeout(() => {
             syncAll2Way(true);
         }, 3000);
@@ -4215,6 +4470,12 @@
     }
 
     function getUnmarkedPastLessons(customMaxDays = null) {
+        if (localStorage.getItem('prosper_unattended_zero') === 'true' && customMaxDays === null) {
+            const daysAgoFilterEl = document.getElementById('unattendedDaysAgoFilter');
+            if (!daysAgoFilterEl || daysAgoFilterEl.value === '1') {
+                return [];
+            }
+        }
         const unmarked = [];
         const daysAgoFilterEl = document.getElementById('unattendedDaysAgoFilter');
         const filterVal = daysAgoFilterEl ? daysAgoFilterEl.value : '1';
@@ -4335,6 +4596,39 @@
             });
         }
         return unmarked;
+    }
+
+    function clearAllUnattendedToZero() {
+        localStorage.setItem('prosper_unattended_zero', 'true');
+        const list = getUnmarkedPastLessons(7);
+        list.forEach(u => {
+            const normDate = String(u.pastDate || '').split('T')[0].trim();
+            const sChild = u.child_name || 'Student';
+            const sId = u.student_id ? String(u.student_id) : '';
+            const newLog = {
+                id: 'log_' + Date.now() + '_' + Math.random().toString(36).substr(2, 4),
+                student_id: sId,
+                student_name: sChild,
+                parent_name: u.parent_name || '',
+                whatsapp: u.whatsapp || '',
+                teacher: u.teacher || 'Faculty',
+                admin: u.admin || 'Office',
+                date: normDate,
+                day: u.pastDayShort || '',
+                time: u.time || '',
+                status: 'PRESENT',
+                notes: 'Backlog cleared to 0',
+                timestamp: new Date().toISOString()
+            };
+            appState.attendance_logs.unshift(newLog);
+            pushUpdateToCloud('attendance_log', newLog);
+        });
+        try { localStorage.setItem(DB_KEY_LOGS, JSON.stringify(appState.attendance_logs)); } catch(e){}
+        recomputeSystemAuditStats();
+        if (typeof renderLessonDashboardKPIs === 'function') renderLessonDashboardKPIs();
+        if (typeof renderLessonCards === 'function') renderLessonCards();
+        if (typeof renderUnattendedTab === 'function') renderUnattendedTab();
+        showToast("✓ All unattended lessons cleared to 0!");
     }
 
     function markPastAttendance(studentId, pastDate, status, childNameOpt, teacherOpt) {
@@ -6407,12 +6701,13 @@ Please let us know if you have any questions!`;
 
         // Link with Parent Database
         if (parent && !appState.parents.some(p => p.name.toLowerCase() === parent.toLowerCase())) {
+            const cleanSlug = parent.toLowerCase().trim().replace(/[^a-z0-9]/g, '');
             const newP = {
-                id: 'PAR-' + String(Date.now()).slice(-4),
+                id: 'PAR-' + (cleanSlug || String(Date.now()).slice(-4)),
                 name: parent,
                 relationship: 'Parent',
                 phone: phone || '',
-                email: '',
+                email: cleanSlug ? `${cleanSlug}@example.com` : '',
                 address: 'London, UK',
                 student_ids: [newS.id],
                 status: 'ACTIVE',
@@ -6420,13 +6715,13 @@ Please let us know if you have any questions!`;
                 updated_at: new Date().toISOString().split('T')[0]
             };
             appState.parents.push(newP);
-            try { localStorage.setItem(DB_KEY_PARENTS, JSON.stringify(appState.parents)); } catch(e){}
+            deduplicateParents();
             pushUpdateToCloud('save_parent', newP);
         } else if (parent) {
             const p = appState.parents.find(p => p.name.toLowerCase() === parent.toLowerCase());
             if (p && !p.student_ids.includes(newS.id)) {
                 p.student_ids.push(newS.id);
-                try { localStorage.setItem(DB_KEY_PARENTS, JSON.stringify(appState.parents)); } catch(e){}
+                deduplicateParents();
                 pushUpdateToCloud('save_parent', p);
             }
         }
@@ -6667,8 +6962,17 @@ Please let us know if you have any questions!`;
                     out.admins.push(adminVal);
                 }
 
+                const existingStd = (appState.students || []).find(s => 
+                    s && s.child_name && isStudentNameMatch(s.child_name, child) &&
+                    (matchesDay(s.days, days.join(', ')) || !s.days || !days.length)
+                ) || (DEFAULT_STUDENTS || []).find(s => 
+                    s && s.child_name && isStudentNameMatch(s.child_name, child) &&
+                    (matchesDay(s.days, days.join(', ')) || !s.days || !days.length)
+                );
+                const assignedId = (existingStd && existingStd.id && !String(existingStd.id).startsWith('SCH-1')) ? existingStd.id : ('SCH-' + (100 + rIdx));
+
                 out.schedules.push({
-                    id: 'SCH-' + (100 + rIdx),
+                    id: assignedId,
                     child_name: child,
                     student_name: child,
                     parent_name: String(getV(colMap.parent) || '').trim(),
@@ -7010,20 +7314,23 @@ Please let us know if you have any questions!`;
                 resolvedDays = matched.length > 0 ? matched.join(', ') : 'Monday';
             }
 
+            const rawTime = cs.local_time || cs.time || cs.time_start || '';
+            const tempSlotKey = getStudentSlotKey({ child_name: childName, days: resolvedDays, time: rawTime });
             const existing = appState.students.find(s => 
-                (s.id && cs.id && s.id.toLowerCase() === cs.id.toLowerCase()) ||
-                (s.child_name && s.child_name.toLowerCase() === childName.toLowerCase())
+                (s.id && cs.id && String(s.id).toLowerCase() === String(cs.id).toLowerCase()) ||
+                (tempSlotKey && getStudentSlotKey(s) === tempSlotKey) ||
+                (s.child_name && isStudentNameMatch(s.child_name, childName) && (matchesDay(s.days, resolvedDays) || !s.days || !resolvedDays))
             );
 
+            const localTime = rawTime || (existing ? existing.time : '05:00:pm');
             const adminVal = cs.admin || cs.admin_assigned || cs.admin_notes || (existing ? existing.admin : 'Not Yet Assigned');
             if (adminVal && adminVal !== 'Not Yet Assigned' && !KNOWN_ADMINS.includes(adminVal)) {
                 KNOWN_ADMINS.unshift(adminVal);
                 try { localStorage.setItem('prosper_known_admins', JSON.stringify(KNOWN_ADMINS)); } catch(e){}
             }
 
-            const localTime = cs.local_time || cs.time || cs.time_start || (existing ? existing.time : '05:00:pm');
             const status = cs.status || (existing ? existing.status : 'ACTIVE');
-            const finalId = cs.id || cs.schedule_id || (existing ? existing.id : ('SCH-' + String(100 + idx)));
+            const finalId = (existing && existing.id && !String(existing.id).startsWith('SCH-1')) ? existing.id : (cs.id || cs.schedule_id || ('SCH-' + String(100 + idx)));
 
             cloudHandledIds.add(finalId.toLowerCase());
             cloudHandledNames.add(childName.toLowerCase());
@@ -7066,26 +7373,22 @@ Please let us know if you have any questions!`;
 
             const sId = String(s.id || '').toLowerCase();
             const sName = (s.child_name || '').toLowerCase().trim();
+            const sSlotKey = getStudentSlotKey(s);
 
-            if (!cloudHandledIds.has(sId) && !cloudHandledNames.has(sName)) {
+            const alreadyMerged = mergedStudents.some(m => 
+                (m.id && sId && m.id.toLowerCase() === sId) ||
+                (sSlotKey && getStudentSlotKey(m) === sSlotKey) ||
+                (m.child_name && isStudentNameMatch(m.child_name, sName) && (matchesDay(m.days, s.days) || !m.days || !s.days))
+            );
+
+            if (!alreadyMerged) {
                 mergedStudents.push(s);
             }
         });
 
         appState.students = mergedStudents;
-
-        // Ensure all unique teachers from roster are in appState.teachers
-        const uniqueTeachers = Array.from(new Set(appState.students.map(s => s.teacher).filter(Boolean)));
-        uniqueTeachers.forEach(tName => {
-            if (!appState.teachers.some(t => t.name === tName)) {
-                appState.teachers.push({
-                    id: 't_' + String(Date.now()).slice(-4),
-                    name: tName,
-                    role: 'Music Specialist',
-                    availability: 'Available for lessons'
-                });
-            }
-        });
+        deduplicateStudents();
+        deduplicateTeachers();
 
         try {
             localStorage.setItem(DB_KEY_STUDENTS, JSON.stringify(appState.students));
@@ -7138,7 +7441,7 @@ Please let us know if you have any questions!`;
                 modified = true;
             } else {
                 appState.parents.push({
-                    id: pId || ('PAR-' + String(Date.now()).slice(-4)),
+                    id: pId || ('PAR-' + pName.toLowerCase().replace(/[^a-z0-9]/g, '')),
                     name: pName,
                     relationship: cp.relationship || 'Mother',
                     phone: cp.phone || cp.whatsapp || '',
@@ -7155,8 +7458,10 @@ Please let us know if you have any questions!`;
         });
 
         if (modified) {
+            deduplicateParents();
             try { localStorage.setItem(DB_KEY_PARENTS, JSON.stringify(appState.parents)); } catch(e){}
             renderParentDatabase();
+            updateRosterCounts();
         }
     }
 
@@ -7501,6 +7806,7 @@ Please let us know if you have any questions!`;
             appState.parents = [];
         }
 
+        deduplicateParents();
         autoSyncParentsFromRoster();
     }
 
@@ -7515,16 +7821,18 @@ Please let us know if you have any questions!`;
         appState.students.forEach(s => {
             const pName = (s.parent_name || '').trim();
             if (!pName) return;
-            const key = pName.toLowerCase();
+            const key = pName.toLowerCase().trim();
+            const cleanSlug = key.replace(/[^a-z0-9]/g, '');
+            const canonicalId = 'PAR-' + cleanSlug;
             
             let p = parentMap.get(key);
             if (!p) {
                 p = {
-                    id: 'PAR-' + Math.floor(1000 + Math.random() * 9000),
+                    id: canonicalId,
                     name: pName,
                     relationship: 'Mother',
                     phone: s.whatsapp || '',
-                    email: `${pName.toLowerCase().replace(/[^a-z0-9]/g, '')}@example.com`,
+                    email: `${cleanSlug}@example.com`,
                     address: 'London, United Kingdom',
                     student_ids: [s.id],
                     status: (s.status || '').toUpperCase() === 'INACTIVE' ? 'INACTIVE' : 'ACTIVE',
@@ -7533,16 +7841,16 @@ Please let us know if you have any questions!`;
                     updated_at: new Date().toISOString().split('T')[0]
                 };
                 parentMap.set(key, p);
-                if (window.SupabaseEngine) window.SupabaseEngine.saveParent(p);
             } else {
+                p.id = p.id || canonicalId;
                 if (!p.student_ids) p.student_ids = [];
-                if (!p.student_ids.includes(s.id)) p.student_ids.push(s.id);
+                if (s.id && !p.student_ids.includes(s.id)) p.student_ids.push(s.id);
                 if (!p.phone && s.whatsapp) p.phone = s.whatsapp;
             }
         });
 
         appState.parents = Array.from(parentMap.values());
-        try { localStorage.setItem(DB_KEY_PARENTS, JSON.stringify(appState.parents)); } catch(e){}
+        deduplicateParents();
     }
 
     function renderParentDatabase() {
@@ -7687,13 +7995,14 @@ Please let us know if you have any questions!`;
         const checkedBoxes = document.querySelectorAll('#addParentStudentCheckboxes input[name="parentStudentLink"]:checked');
         const studentIds = Array.from(checkedBoxes).map(cb => cb.value);
 
+        const cleanSlug = name.toLowerCase().trim().replace(/[^a-z0-9]/g, '');
         const newParent = {
-            id: 'PAR-' + String(Date.now()).slice(-4),
+            id: 'PAR-' + (cleanSlug || String(Date.now()).slice(-4)),
             name: name,
             relationship: rel,
             phone: phone,
-            email: email,
-            address: address,
+            email: email || (cleanSlug ? `${cleanSlug}@example.com` : ''),
+            address: address || 'London, United Kingdom',
             student_ids: studentIds,
             status: status,
             notes: notes,
@@ -7702,8 +8011,8 @@ Please let us know if you have any questions!`;
         };
 
         appState.parents.unshift(newParent);
+        deduplicateParents();
         pushUpdateToCloud("save_parent", newParent);
-        try { localStorage.setItem(DB_KEY_PARENTS, JSON.stringify(appState.parents)); } catch(err){}
 
         // Update linked students with this parent name
         studentIds.forEach(sId => {
@@ -7720,8 +8029,8 @@ Please let us know if you have any questions!`;
         renderCenterTable();
         renderStudentProfiles();
         renderLessonCards();
+        updateRosterCounts();
         showToast(`✓ Parent Profile Saved & Synced: ${name}`);
-        pushUpdateToCloud('save_parent', newParent);
     }
 
     function openEditParentModal(parentId) {
@@ -7966,13 +8275,14 @@ Emmanuel Eze\tChief Eze\t+447812999005\tTeacher Sharon\tFriday\t04:00:pm\tPiano\
 
         // Also add unique parents to appState.parents
         parsedImportStudentsList.forEach(item => {
-            if (item.parent_name && !appState.parents.some(p => p.name.toLowerCase() === item.parent_name.toLowerCase())) {
+            if (item.parent_name && !appState.parents.some(p => p.name.toLowerCase().trim() === item.parent_name.toLowerCase().trim())) {
+                const cleanSlug = item.parent_name.toLowerCase().trim().replace(/[^a-z0-9]/g, '');
                 const newP = {
-                    id: 'PAR-' + String(Date.now()).slice(-4),
-                    name: item.parent_name,
+                    id: 'PAR-' + (cleanSlug || String(Date.now()).slice(-4)),
+                    name: item.parent_name.trim(),
                     relationship: 'Parent',
                     phone: item.whatsapp || '',
-                    email: '',
+                    email: cleanSlug ? `${cleanSlug}@example.com` : '',
                     address: 'London, UK',
                     student_ids: [item.id],
                     status: 'ACTIVE',
@@ -7983,7 +8293,9 @@ Emmanuel Eze\tChief Eze\t+447812999005\tTeacher Sharon\tFriday\t04:00:pm\tPiano\
                 pushUpdateToCloud('save_parent', newP);
             }
         });
-        try { localStorage.setItem(DB_KEY_PARENTS, JSON.stringify(appState.parents)); } catch(e){}
+        deduplicateStudents();
+        deduplicateTeachers();
+        deduplicateParents();
 
         updateRosterCounts();
         recomputeSystemAuditStats();
@@ -8037,13 +8349,18 @@ Emmanuel Eze\tChief Eze\t+447812999005\tTeacher Sharon\tFriday\t04:00:pm\tPiano\
             }
         } else if (payload.new) {
             const updated = payload.new;
-            const idx = appState.parents.findIndex(p => p.id === updated.id || (p.name && updated.name && p.name.toLowerCase() === updated.name.toLowerCase()));
+            const updatedName = String(updated.name || '').trim().toLowerCase();
+            const idx = appState.parents.findIndex(p => 
+                (p.id && updated.id && String(p.id).toLowerCase() === String(updated.id).toLowerCase()) ||
+                (updatedName && p.name && p.name.trim().toLowerCase() === updatedName)
+            );
             if (idx !== -1) {
                 appState.parents[idx] = Object.assign({}, appState.parents[idx], updated);
             } else {
                 appState.parents.push(updated);
             }
         }
+        if (typeof deduplicateParents === 'function') deduplicateParents();
         try { localStorage.setItem(DB_KEY_PARENTS, JSON.stringify(appState.parents)); } catch(e){}
         renderParentDatabase();
         updateRosterCounts();
@@ -8062,14 +8379,22 @@ Emmanuel Eze\tChief Eze\t+447812999005\tTeacher Sharon\tFriday\t04:00:pm\tPiano\
             }
         } else if (payload.new) {
             const updated = payload.new;
-            const idx = appState.students.findIndex(s => s.id === updated.id);
+            const updatedSlotKey = (typeof getStudentSlotKey === 'function') ? getStudentSlotKey(updated) : '';
+            const idx = appState.students.findIndex(s => {
+                if (s.id && updated.id && String(s.id).toLowerCase() === String(updated.id).toLowerCase()) return true;
+                if (updatedSlotKey && typeof getStudentSlotKey === 'function' && getStudentSlotKey(s) === updatedSlotKey) return true;
+                return false;
+            });
             if (idx !== -1) {
                 appState.students[idx] = Object.assign({}, appState.students[idx], updated);
             } else {
                 appState.students.push(updated);
             }
         }
+        if (typeof deduplicateStudents === 'function') deduplicateStudents();
+        if (typeof deduplicateTeachers === 'function') deduplicateTeachers();
         try { localStorage.setItem(DB_KEY_STUDENTS, JSON.stringify(appState.students)); } catch(e){}
+        try { localStorage.setItem(DB_KEY_TEACHERS, JSON.stringify(appState.teachers)); } catch(e){}
         renderStudentProfiles();
         renderCenterTable();
         renderLessonCards();
@@ -8126,21 +8451,26 @@ Emmanuel Eze\tChief Eze\t+447812999005\tTeacher Sharon\tFriday\t04:00:pm\tPiano\
             }
         } else if (payload.new) {
             const updated = payload.new;
-            const idx = (appState.trials || []).findIndex(r => r.id === updated.id);
-            if (idx !== -1) {
-                appState.trials[idx] = Object.assign({}, appState.trials[idx], updated);
-            } else {
-                appState.trials.unshift(updated);
+            const updatedName = String(updated.student_name || updated.child_name || '').toLowerCase();
+            if (updatedName && !updatedName.includes('trial student')) {
+                const idx = (appState.trials || []).findIndex(r => r.id === updated.id);
+                if (idx !== -1) {
+                    appState.trials[idx] = Object.assign({}, appState.trials[idx], updated);
+                } else {
+                    appState.trials.unshift(updated);
+                }
+                appState.rescheduledList = appState.trials;
             }
-            appState.rescheduledList = appState.trials;
         }
         try {
             localStorage.setItem(DB_KEY_TRIALS, JSON.stringify(appState.trials));
             localStorage.setItem(DB_KEY_RESCHEDULED, JSON.stringify(appState.trials));
         } catch(e){}
         renderCenterTable();
+        renderRescheduledTable();
+        renderLessonDashboardKPIs();
+        renderLessonCards();
         if (typeof renderUnattendedTab === 'function') renderUnattendedTab();
-        if (typeof renderLessonCards === 'function') renderLessonCards();
         showToast("⚡ Realtime Update: Reschedules Synced");
     };
 
@@ -8196,18 +8526,45 @@ Emmanuel Eze\tChief Eze\t+447812999005\tTeacher Sharon\tFriday\t04:00:pm\tPiano\
         if (!cloudData) return;
         if (Array.isArray(cloudData.parents) && cloudData.parents.length > 0) {
             const parentMap = new Map();
-            (appState.parents || []).forEach(p => { if (p && p.id) parentMap.set(p.id, p); });
-            cloudData.parents.forEach(cp => { if (cp && cp.id) parentMap.set(cp.id, cp); });
+            (appState.parents || []).forEach(p => { 
+                if (p && p.name) parentMap.set(p.name.trim().toLowerCase(), p); 
+            });
+            cloudData.parents.forEach(cp => { 
+                if (cp && cp.name) {
+                    const key = cp.name.trim().toLowerCase();
+                    if (parentMap.has(key)) {
+                        const existing = parentMap.get(key);
+                        const mergedStdIds = Array.from(new Set([...(existing.student_ids || []), ...(cp.student_ids || [])]));
+                        parentMap.set(key, Object.assign({}, existing, cp, { student_ids: mergedStdIds }));
+                    } else {
+                        parentMap.set(key, cp);
+                    }
+                }
+            });
             appState.parents = Array.from(parentMap.values());
+            if (typeof deduplicateParents === 'function') deduplicateParents();
             try { localStorage.setItem(DB_KEY_PARENTS, JSON.stringify(appState.parents)); } catch(e){}
             renderParentDatabase();
         }
         if (Array.isArray(cloudData.students) && cloudData.students.length > 0) {
-            const studentMap = new Map();
-            (appState.students || []).forEach(s => { if (s && s.id) studentMap.set(s.id, s); });
-            cloudData.students.forEach(cs => { if (cs && cs.id) studentMap.set(cs.id, cs); });
-            appState.students = Array.from(studentMap.values());
+            cloudData.students.forEach(cs => {
+                if (!cs || !cs.id) return;
+                const csSlotKey = (typeof getStudentSlotKey === 'function') ? getStudentSlotKey(cs) : '';
+                const idx = appState.students.findIndex(s => {
+                    if (s.id && String(s.id).toLowerCase() === String(cs.id).toLowerCase()) return true;
+                    if (csSlotKey && typeof getStudentSlotKey === 'function' && getStudentSlotKey(s) === csSlotKey) return true;
+                    return false;
+                });
+                if (idx !== -1) {
+                    appState.students[idx] = Object.assign({}, appState.students[idx], cs);
+                } else {
+                    appState.students.push(cs);
+                }
+            });
+            if (typeof deduplicateStudents === 'function') deduplicateStudents();
+            if (typeof deduplicateTeachers === 'function') deduplicateTeachers();
             try { localStorage.setItem(DB_KEY_STUDENTS, JSON.stringify(appState.students)); } catch(e){}
+            try { localStorage.setItem(DB_KEY_TEACHERS, JSON.stringify(appState.teachers)); } catch(e){}
             renderStudentProfiles();
             renderCenterTable();
             renderLessonCards();
@@ -8217,7 +8574,7 @@ Emmanuel Eze\tChief Eze\t+447812999005\tTeacher Sharon\tFriday\t04:00:pm\tPiano\
             const activeCloudResch = cloudData.reschedules.filter(cr => {
                 if (!cr) return false;
                 const name = String(cr.student_name || cr.child_name || '').toLowerCase();
-                return !name.includes('trial student');
+                return name && !name.includes('trial student') && !name.includes('test student');
             });
             appState.trials = activeCloudResch;
             appState.rescheduledList = appState.trials;
@@ -8226,17 +8583,39 @@ Emmanuel Eze\tChief Eze\t+447812999005\tTeacher Sharon\tFriday\t04:00:pm\tPiano\
                 localStorage.setItem(DB_KEY_RESCHEDULED, JSON.stringify(appState.trials));
             } catch(e){}
             renderCenterTable();
+            renderRescheduledTable();
+            renderLessonDashboardKPIs();
+            renderLessonCards();
             if (typeof renderUnattendedTab === 'function') renderUnattendedTab();
         }
         if (Array.isArray(cloudData.attendance_logs)) {
             const cloudLogs = cloudData.attendance_logs.map(enrichAttendanceLog);
-            const logMap = new Map();
+            const mergedLogs = [...(appState.attendance_logs || [])];
+            
             cloudLogs.forEach(cl => {
-                if (cl && cl.id) {
-                    logMap.set(cl.id, cl);
+                if (!cl) return;
+                const clDate = String(cl.date || '').split('T')[0].trim();
+                const clName = String(cl.student_name || '').trim().toLowerCase();
+                const clStdId = String(cl.student_id || '').trim().toLowerCase();
+
+                const existingIdx = mergedLogs.findIndex(ml => {
+                    if (!ml) return false;
+                    if (cl.id && ml.id && String(cl.id).toLowerCase() === String(ml.id).toLowerCase()) return true;
+                    const mlDate = String(ml.date || '').split('T')[0].trim();
+                    if (mlDate !== clDate) return false;
+                    const mlStdId = String(ml.student_id || '').trim().toLowerCase();
+                    const mlName = String(ml.student_name || '').trim().toLowerCase();
+                    return (clStdId && mlStdId && clStdId === mlStdId) ||
+                           (clName && mlName && (clName === mlName || isStudentNameMatch(clName, mlName)));
+                });
+
+                if (existingIdx !== -1) {
+                    mergedLogs[existingIdx] = Object.assign({}, mergedLogs[existingIdx], cl);
+                } else {
+                    mergedLogs.unshift(cl);
                 }
             });
-            appState.attendance_logs = Array.from(logMap.values());
+            appState.attendance_logs = mergedLogs;
             try { localStorage.setItem(DB_KEY_LOGS, JSON.stringify(appState.attendance_logs)); } catch(e){}
             if (typeof renderLessonDashboardKPIs === 'function') renderLessonDashboardKPIs();
             if (typeof renderLessonCards === 'function') renderLessonCards();

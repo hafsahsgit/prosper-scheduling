@@ -12,13 +12,16 @@
 
     function cleanParentPayload(p) {
         if (!p) return null;
+        const name = String(p.name || 'Parent').trim();
+        const slug = name.toLowerCase().replace(/[^a-z0-9]/g, '');
+        const pId = p.id && !String(p.id).match(/^PAR-\d{4}$/) ? String(p.id).trim() : ('PAR-' + (slug || 'unassigned'));
         return {
-            id: String(p.id || ('PAR-' + Math.floor(1000 + Math.random() * 9000))),
-            name: String(p.name || 'Parent'),
+            id: pId,
+            name: name,
             relationship: String(p.relationship || 'Mother'),
             phone: String(p.phone || ''),
-            email: String(p.email || ''),
-            address: String(p.address || ''),
+            email: String(p.email || (slug ? `${slug}@example.com` : '')),
+            address: String(p.address || 'London, United Kingdom'),
             student_ids: Array.isArray(p.student_ids) ? p.student_ids : [],
             status: String(p.status || 'ACTIVE').toUpperCase(),
             notes: String(p.notes || ''),
@@ -136,7 +139,8 @@
                 return false;
             }
         } else {
-            console.log("Supabase JS SDK loading...");
+            console.log("Supabase JS SDK loading... retrying in 250ms");
+            setTimeout(initSupabase, 250);
             return false;
         }
     }
@@ -223,10 +227,10 @@
     }
 
     function setupMobileLivenessPolling() {
-        // Automatic REST poll every 8 seconds to ensure mobile phones with suspended WebSockets sync instantly
+        // High-frequency REST poll every 3 seconds to guarantee instant multi-device mobile sync
         setInterval(() => {
             fetchInitialCloudData();
-        }, 8000);
+        }, 3000);
 
         // Instant re-fetch & re-subscribe when user unlocks phone or switches back to tab
         window.addEventListener('focus', () => {
