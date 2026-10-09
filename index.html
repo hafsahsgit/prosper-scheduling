@@ -2490,13 +2490,18 @@
                     <input type="text" id="gasUrlInput" value="https://script.google.com/macros/s/AKfycbxlQrvEqRnVrv8HxZhg3gqwSNi6v1_yW1ExZjp-ekMsI5DvBCmU4hFrLntL5j0r5GBT/exec" class="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-white font-mono text-[11px]">
                 </div>
                 <div class="p-3 bg-slate-850 rounded-xl border border-slate-800 text-slate-400 text-[11px] leading-relaxed">
-                    Changes made here automatically update locally and synchronize bidirectionally with the Google Spreadsheet.
+                    Changes made here automatically update locally and synchronize bidirectionally with the Supabase Realtime Engine.
                 </div>
-                <div class="flex justify-between items-center pt-3 border-t border-slate-800">
-                    <button onclick="resetToInitialData()" class="text-rose-400 hover:text-rose-300 font-semibold">Reset to Sheet Defaults</button>
-                    <div class="space-x-2">
-                        <button onclick="closeModal('syncModal')" class="px-3 py-1.5 rounded-lg bg-slate-800 text-slate-300">Close</button>
-                        <button onclick="saveSyncSettings()" class="px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white font-bold">Save URL</button>
+                <div class="pt-3 border-t border-slate-800 space-y-3">
+                    <button onclick="handlePurgeAllDatabase()" class="w-full py-2.5 px-3 rounded-xl bg-rose-600/20 hover:bg-rose-600 text-rose-300 hover:text-white border border-rose-500/40 text-xs font-bold transition flex items-center justify-center gap-2 cursor-pointer">
+                        <span>🔥</span> Reset & Purge All Database Records (Start Fresh)
+                    </button>
+                    <div class="flex justify-between items-center">
+                        <button onclick="resetToInitialData()" class="text-slate-400 hover:text-slate-300 font-semibold text-[11px]">Reset Local Cache</button>
+                        <div class="space-x-2">
+                            <button onclick="closeModal('syncModal')" class="px-3 py-1.5 rounded-lg bg-slate-800 text-slate-300">Close</button>
+                            <button onclick="saveSyncSettings()" class="px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white font-bold">Save URL</button>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -4207,8 +4212,7 @@
         // Ensure unattended starts at 0 clean
         localStorage.setItem('prosper_unattended_zero', 'true');
 
-        // Immediate Live 2-Way Sync with Google Sheets & Supabase Cloud on open
-        syncAll2Way(false);
+        // Immediate Live Supabase Cloud Sync on open
         if (window.SupabaseEngine && typeof window.SupabaseEngine.init === 'function') {
             window.SupabaseEngine.init();
             if (typeof window.SupabaseEngine.fetchAllData === 'function') {
@@ -4219,9 +4223,6 @@
                 }).catch(e => console.warn(e));
             }
         }
-        setTimeout(() => {
-            syncAll2Way(true);
-        }, 3000);
     }
 
 
@@ -6781,6 +6782,48 @@ Please let us know if you have any questions!`;
         closeModal('syncModal');
     }
 
+    async function handlePurgeAllDatabase() {
+        if (!confirm("⚠️ WARNING: ARE YOU SURE YOU WANT TO PURGE ALL DATA FROM SUPABASE?\n\nThis will permanently delete all Parents, Students, Reschedules, Payments, and Attendance Logs from the database so you can start 100% fresh with your clean data.")) {
+            return;
+        }
+        if (!confirm("🔥 FINAL CONFIRMATION: Clear all cloud records across all connected devices?")) {
+            return;
+        }
+
+        if (window.SupabaseEngine && typeof window.SupabaseEngine.purgeAllCloudData === 'function') {
+            const ok = await window.SupabaseEngine.purgeAllCloudData();
+            if (ok) {
+                appState.students = [];
+                appState.parents = [];
+                appState.trials = [];
+                appState.payments = [];
+                appState.attendance_logs = [];
+                try {
+                    localStorage.removeItem(DB_KEY_STUDENTS);
+                    localStorage.removeItem(DB_KEY_PARENTS);
+                    localStorage.removeItem(DB_KEY_TRIALS);
+                    localStorage.removeItem(DB_KEY_PAYMENTS);
+                    localStorage.removeItem(DB_KEY_LOGS);
+                } catch(e){}
+
+                renderStudentProfiles();
+                renderParentDatabase();
+                renderCenterTable();
+                renderLessonCards();
+                renderLessonDashboardKPIs();
+                renderRescheduledTable();
+                renderTeachersWorkloadMatrix();
+                if (typeof renderUnattendedTab === 'function') renderUnattendedTab();
+                if (typeof renderPaymentHistoryTable === 'function') renderPaymentHistoryTable();
+
+                closeModal('syncModal');
+                showToast("🔥 Database purged cleanly! You can now populate fresh data.");
+            } else {
+                alert("Failed to purge database. Please check connection.");
+            }
+        }
+    }
+
     // -------------------------------------------------------------------------
     // 2-WAY CLOUD SYNC ENGINE (REAL GOOGLE SHEETS SYNCHRONIZATION)
     // -------------------------------------------------------------------------
@@ -7573,21 +7616,8 @@ Please let us know if you have any questions!`;
     // ==========================================
     // MULTI-ADMIN REAL-TIME AUTO SYNC ENGINE
     // ==========================================
-    // 1. Automatic background poll every 15 seconds so changes made in sheet or by any admin display automatically
-    setInterval(() => {
-        syncAll2Way(true);
-    }, 15000);
-
-    // 2. Instant sync whenever an admin switches back to this browser tab
-    window.addEventListener('focus', () => {
-        syncAll2Way(true);
-    });
-
-    document.addEventListener('visibilitychange', () => {
-        if (document.visibilityState === 'visible') {
-            syncAll2Way(true);
-        }
-    });
+    // Automatic background sync runs via Supabase Realtime Engine (0.1s updates)
+    // Manual Google Sheets sync is available via the 'Sync' header button if explicitly needed.
 
     // 3. Instant local cross-tab sync (<100ms) across multiple browser windows on same machine
     window.addEventListener('storage', (e) => {
@@ -8122,7 +8152,6 @@ Please let us know if you have any questions!`;
 
         appState.parents = appState.parents.filter(x => x.id !== parentId);
         try { localStorage.setItem(DB_KEY_PARENTS, JSON.stringify(appState.parents)); } catch(err){}
-        pushUpdateToCloud('edit_parent', p);
 
         closeModal('editParentModal');
         renderParentDatabase();
@@ -8531,45 +8560,18 @@ Emmanuel Eze\tChief Eze\t+447812999005\tTeacher Sharon\tFriday\t04:00:pm\tPiano\
     };
 
     window.onInitialCloudDataLoaded = function(cloudData) {
-        console.log("⚡ Supabase Cloud Data Loaded on startup:", cloudData);
+        console.log("⚡ Supabase Cloud Data Loaded:", cloudData);
         if (!cloudData) return;
-        if (Array.isArray(cloudData.parents) && cloudData.parents.length > 0) {
-            const parentMap = new Map();
-            (appState.parents || []).forEach(p => { 
-                if (p && p.name) parentMap.set(p.name.trim().toLowerCase(), p); 
-            });
-            cloudData.parents.forEach(cp => { 
-                if (cp && cp.name) {
-                    const key = cp.name.trim().toLowerCase();
-                    if (parentMap.has(key)) {
-                        const existing = parentMap.get(key);
-                        const mergedStdIds = Array.from(new Set([...(existing.student_ids || []), ...(cp.student_ids || [])]));
-                        parentMap.set(key, Object.assign({}, existing, cp, { student_ids: mergedStdIds }));
-                    } else {
-                        parentMap.set(key, cp);
-                    }
-                }
-            });
-            appState.parents = Array.from(parentMap.values());
+        
+        if (Array.isArray(cloudData.parents)) {
+            appState.parents = cloudData.parents;
             if (typeof deduplicateParents === 'function') deduplicateParents();
             try { localStorage.setItem(DB_KEY_PARENTS, JSON.stringify(appState.parents)); } catch(e){}
             renderParentDatabase();
         }
-        if (Array.isArray(cloudData.students) && cloudData.students.length > 0) {
-            cloudData.students.forEach(cs => {
-                if (!cs || !cs.id) return;
-                const csSlotKey = (typeof getStudentSlotKey === 'function') ? getStudentSlotKey(cs) : '';
-                const idx = appState.students.findIndex(s => {
-                    if (s.id && String(s.id).toLowerCase() === String(cs.id).toLowerCase()) return true;
-                    if (csSlotKey && typeof getStudentSlotKey === 'function' && getStudentSlotKey(s) === csSlotKey) return true;
-                    return false;
-                });
-                if (idx !== -1) {
-                    appState.students[idx] = Object.assign({}, appState.students[idx], cs);
-                } else {
-                    appState.students.push(cs);
-                }
-            });
+
+        if (Array.isArray(cloudData.students)) {
+            appState.students = cloudData.students;
             if (typeof deduplicateStudents === 'function') deduplicateStudents();
             if (typeof deduplicateTeachers === 'function') deduplicateTeachers();
             try { localStorage.setItem(DB_KEY_STUDENTS, JSON.stringify(appState.students)); } catch(e){}
@@ -8579,6 +8581,7 @@ Emmanuel Eze\tChief Eze\t+447812999005\tTeacher Sharon\tFriday\t04:00:pm\tPiano\
             renderLessonCards();
             renderTeachersWorkloadMatrix();
         }
+
         if (Array.isArray(cloudData.reschedules)) {
             const activeCloudResch = cloudData.reschedules.filter(cr => {
                 if (!cr) return false;
@@ -8597,34 +8600,9 @@ Emmanuel Eze\tChief Eze\t+447812999005\tTeacher Sharon\tFriday\t04:00:pm\tPiano\
             renderLessonCards();
             if (typeof renderUnattendedTab === 'function') renderUnattendedTab();
         }
+
         if (Array.isArray(cloudData.attendance_logs)) {
-            const cloudLogs = cloudData.attendance_logs.map(enrichAttendanceLog);
-            const mergedLogs = [...(appState.attendance_logs || [])];
-            
-            cloudLogs.forEach(cl => {
-                if (!cl) return;
-                const clDate = String(cl.date || '').split('T')[0].trim();
-                const clName = String(cl.student_name || '').trim().toLowerCase();
-                const clStdId = String(cl.student_id || '').trim().toLowerCase();
-
-                const existingIdx = mergedLogs.findIndex(ml => {
-                    if (!ml) return false;
-                    if (cl.id && ml.id && String(cl.id).toLowerCase() === String(ml.id).toLowerCase()) return true;
-                    const mlDate = String(ml.date || '').split('T')[0].trim();
-                    if (mlDate !== clDate) return false;
-                    const mlStdId = String(ml.student_id || '').trim().toLowerCase();
-                    const mlName = String(ml.student_name || '').trim().toLowerCase();
-                    return (clStdId && mlStdId && clStdId === mlStdId) ||
-                           (clName && mlName && (clName === mlName || isStudentNameMatch(clName, mlName)));
-                });
-
-                if (existingIdx !== -1) {
-                    mergedLogs[existingIdx] = Object.assign({}, mergedLogs[existingIdx], cl);
-                } else {
-                    mergedLogs.unshift(cl);
-                }
-            });
-            appState.attendance_logs = mergedLogs;
+            appState.attendance_logs = cloudData.attendance_logs.map(enrichAttendanceLog);
             try { localStorage.setItem(DB_KEY_LOGS, JSON.stringify(appState.attendance_logs)); } catch(e){}
             if (typeof renderLessonDashboardKPIs === 'function') renderLessonDashboardKPIs();
             if (typeof renderLessonCards === 'function') renderLessonCards();
@@ -8632,6 +8610,13 @@ Emmanuel Eze\tChief Eze\t+447812999005\tTeacher Sharon\tFriday\t04:00:pm\tPiano\
             if (typeof renderAttendanceRegister === 'function') renderAttendanceRegister();
             if (typeof renderAttendanceHoursSummary === 'function') renderAttendanceHoursSummary();
         }
+
+        if (Array.isArray(cloudData.payments)) {
+            appState.payments = cloudData.payments;
+            try { localStorage.setItem(DB_KEY_PAYMENTS, JSON.stringify(appState.payments)); } catch(e){}
+            if (typeof renderPaymentHistoryTable === 'function') renderPaymentHistoryTable();
+        }
+
         updateRosterCounts();
         recomputeSystemAuditStats();
     };

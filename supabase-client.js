@@ -430,6 +430,21 @@
                     attendance_logs: logRes.data || []
                 };
             } catch(e) { console.error("Supabase fetch error:", e); return null; }
+        },
+
+        async purgeAllCloudData() {
+            if (!supabaseClient) return false;
+            try {
+                await Promise.all([
+                    supabaseClient.from('students').delete().neq('id', '___PURGE_ALL___'),
+                    supabaseClient.from('parents').delete().neq('id', '___PURGE_ALL___'),
+                    supabaseClient.from('reschedules').delete().neq('id', '___PURGE_ALL___'),
+                    supabaseClient.from('payment_transactions').delete().neq('id', '___PURGE_ALL___'),
+                    supabaseClient.from('attendance_logs').delete().neq('id', '___PURGE_ALL___')
+                ]);
+                console.log("🔥 All cloud records purged from Supabase.");
+                return true;
+            } catch(e) { console.error("Supabase purge error:", e); return false; }
         }
     };
 
