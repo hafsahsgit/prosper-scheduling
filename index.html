@@ -884,8 +884,22 @@
                 </div>
 
                 <!-- Search & Filters -->
-                <div class="flex items-center space-x-2 text-xs">
+                <div class="flex items-center space-x-2 text-xs flex-wrap gap-y-2">
                     <input type="text" id="ldSearchInput" oninput="renderLessonCards()" placeholder="Search student or parent..." class="bg-slate-800 border border-slate-700 text-white rounded-lg px-3 py-1.5 w-44 sm:w-56 focus:outline-none focus:border-indigo-500">
+                    
+                    <select id="ldDaySelectFilter" onchange="filterLessonDashboard(this.value)" class="bg-indigo-950/80 border border-indigo-500/50 text-indigo-200 font-bold rounded-lg px-2.5 py-1.5 focus:outline-none focus:border-indigo-400">
+                        <option value="today">📅 Filter: Today</option>
+                        <option value="tomorrow">⏭️ Filter: Tomorrow</option>
+                        <option value="mon">Monday</option>
+                        <option value="tue">Tuesday</option>
+                        <option value="wed">Wednesday</option>
+                        <option value="thu">Thursday</option>
+                        <option value="fri">Friday</option>
+                        <option value="sat">Saturday</option>
+                        <option value="sun">Sunday</option>
+                        <option value="all">🌐 All Days</option>
+                    </select>
+
                     <select id="ldTeacherFilter" onchange="renderLessonCards()" class="bg-slate-800 border border-slate-700 text-white rounded-lg px-2.5 py-1.5">
                         <option value="all">All Teachers</option>
                     </select>
@@ -3849,6 +3863,9 @@
 
     function filterLessonDashboard(view) {
         appState.lessonFilter = view;
+        const sel = document.getElementById('ldDaySelectFilter');
+        if (sel) sel.value = view;
+
         const btnIds = ['ldBtnToday', 'ldBtnTomorrow', 'ldBtnMon', 'ldBtnTue', 'ldBtnWed', 'ldBtnThu', 'ldBtnFri', 'ldBtnSat', 'ldBtnAll'];
         btnIds.forEach(id => {
             const btn = document.getElementById(id);
@@ -3950,23 +3967,6 @@
                 existingIdx = seenIds.get(sId);
             } else if (slotKey && seenKeys.has(slotKey)) {
                 existingIdx = seenKeys.get(slotKey);
-            } else {
-                existingIdx = deduplicated.findIndex(existing => {
-                    const exName = String(existing.child_name || existing.student_name || '').trim().toLowerCase();
-                    const curName = name.toLowerCase();
-                    if (exName !== curName && !isStudentNameMatch(exName, curName)) return false;
-                    
-                    const exDays = String(existing.days || '').toLowerCase();
-                    const curDays = String(s.days || '').toLowerCase();
-                    const exTime = String(existing.time || '').toLowerCase().replace(/\s+/g, '').replace(/:([ap]m)$/i, '$1').replace(/^0/, '');
-                    const curTime = String(s.time || '').toLowerCase().replace(/\s+/g, '').replace(/:([ap]m)$/i, '$1').replace(/^0/, '');
-                    
-                    if (exTime && curTime && exTime === curTime) return true;
-                    if (exDays && curDays && (exDays === curDays || matchesDay(exDays, curDays))) {
-                        if (!exTime || !curTime || exTime === curTime) return true;
-                    }
-                    return false;
-                });
             }
 
             if (existingIdx !== -1) {
@@ -8153,10 +8153,32 @@ Please let us know if you have any questions!`;
         appState.parents = appState.parents.filter(x => x.id !== parentId);
         try { localStorage.setItem(DB_KEY_PARENTS, JSON.stringify(appState.parents)); } catch(err){}
 
+        // Save entry in Audit Trail
+        const todayInfo = getDayInfo(0);
+        const auditLog = {
+            id: 'log_audit_' + Date.now(),
+            student_id: parentId,
+            student_name: p.name,
+            parent_name: p.name,
+            whatsapp: p.phone || '',
+            teacher: 'Admin',
+            admin: 'Office',
+            date: todayInfo.isoDate,
+            day: todayInfo.short,
+            time: '00:00:am',
+            status: 'PARENT_DELETED',
+            notes: `Parent record '${p.name}' (${p.id}) deleted by admin. Audit log preserved.`,
+            created_at: new Date().toISOString()
+        };
+        appState.attendance_logs.unshift(auditLog);
+        try { localStorage.setItem(DB_KEY_LOGS, JSON.stringify(appState.attendance_logs)); } catch(e){}
+
         closeModal('editParentModal');
         renderParentDatabase();
-        showToast(`✓ Parent record for ${p.name} removed from database.`);
+        recomputeSystemAuditStats();
+        showToast(`✓ Parent record for ${p.name} deleted & logged in Audit Trail.`);
         pushUpdateToCloud('delete_parent', { id: p.id, name: p.name });
+        pushUpdateToCloud('attendance_log', auditLog);
     }
 
     // -------------------------------------------------------------------------
