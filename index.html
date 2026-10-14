@@ -1445,11 +1445,22 @@
                 <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     <div>
                         <label class="block text-slate-300 font-semibold mb-1">Student Child Name <span class="text-rose-400">*</span></label>
-                        <input type="text" id="addStdChild" required placeholder="e.g. Leo Nwosu" class="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-white placeholder-slate-500 focus:border-emerald-500 focus:outline-none">
+                        <input type="text" id="addStdChild" required placeholder="e.g. Leo Nwosu" class="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-white placeholder-slate-500 focus:border-emerald-500 focus:outline-none font-semibold">
                     </div>
                     <div>
-                        <label class="block text-slate-300 font-semibold mb-1">Parent Name <span class="text-rose-400">*</span></label>
-                        <input type="text" id="addStdParent" required placeholder="e.g. Mrs. Smith" class="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-white placeholder-slate-500 focus:border-emerald-500 focus:outline-none">
+                        <div class="flex items-center justify-between mb-1">
+                            <label class="block text-slate-300 font-semibold">Assign to Parent <span class="text-rose-400">*</span></label>
+                            <button type="button" onclick="openAddParentModal()" class="text-[10px] text-emerald-400 hover:text-emerald-300 font-bold flex items-center gap-0.5">
+                                <span>➕</span><span>New Parent Profile</span>
+                            </button>
+                        </div>
+                        <select id="addStdParentSelect" onchange="onAddStdParentSelectChange()" required class="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-white font-semibold focus:border-emerald-500 focus:outline-none">
+                            <option value="">-- Choose Existing Parent --</option>
+                            <option value="__NEW__">➕ Add New Parent</option>
+                        </select>
+                        <div id="addStdNewParentWrap" class="hidden mt-1.5">
+                            <input type="text" id="addStdParent" placeholder="Enter New Parent Full Name" class="w-full bg-slate-800 border border-emerald-500/60 rounded-lg px-3 py-1.5 text-white placeholder-slate-400 focus:border-emerald-400 text-xs">
+                        </div>
                     </div>
                 </div>
                 <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
@@ -1473,23 +1484,53 @@
                         </select>
                     </div>
                 </div>
-                <div class="grid grid-cols-3 gap-3">
+                <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
                     <div>
-                        <label class="block text-slate-300 font-semibold mb-1">Status</label>
-                        <select id="addStdStatus" class="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-white font-bold">
-                            <option value="ACTIVE" selected>ACTIVE</option>
-                            <option value="PAUSE">PAUSED</option>
-                            <option value="Done">DONE</option>
+                        <div class="flex items-center justify-between mb-1">
+                            <label class="block text-slate-300 font-semibold">First Lesson Date</label>
+                            <div class="flex items-center gap-1">
+                                <button type="button" onclick="setAddStdQuickDate(0)" class="px-1.5 py-0.5 rounded text-[9px] font-bold bg-slate-800 text-emerald-400 border border-slate-700 hover:bg-slate-700">Today</button>
+                                <button type="button" onclick="setAddStdQuickDate(1)" class="px-1.5 py-0.5 rounded text-[9px] font-bold bg-slate-800 text-sky-400 border border-slate-700 hover:bg-slate-700">Tmrw</button>
+                            </div>
+                        </div>
+                        <input type="date" id="addStdDate" onchange="onAddStdDateChange()" class="w-full bg-slate-800 border border-slate-700 rounded-lg px-2.5 py-2 text-white font-mono text-xs focus:border-emerald-500">
+                    </div>
+                    <div>
+                        <label class="block text-slate-300 font-semibold mb-1">Lesson Weekday(s) <span class="text-rose-400">*</span></label>
+                        <select id="addStdDaySelect" onchange="onAddStdDaySelectChange()" class="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-white font-semibold focus:border-emerald-500">
+                            <option value="Monday">Monday</option>
+                            <option value="Tuesday">Tuesday</option>
+                            <option value="Wednesday">Wednesday</option>
+                            <option value="Thursday">Thursday</option>
+                            <option value="Friday">Friday</option>
+                            <option value="Saturday">Saturday</option>
+                            <option value="Sunday">Sunday</option>
+                            <option value="__CUSTOM__">Multi-Day / Custom...</option>
                         </select>
+                        <input type="hidden" id="addStdDays" value="Monday">
+                        <!-- Quick Day Badges for Multi-day classes -->
+                        <div class="flex items-center gap-1 flex-wrap pt-1.5">
+                            <button type="button" onclick="toggleAddStdDayPill('Mon')" class="add-std-day-pill px-1.5 py-0.5 rounded text-[10px] font-bold bg-slate-800 text-slate-400 border border-slate-700 hover:text-white" data-day="Mon">Mon</button>
+                            <button type="button" onclick="toggleAddStdDayPill('Tue')" class="add-std-day-pill px-1.5 py-0.5 rounded text-[10px] font-bold bg-slate-800 text-slate-400 border border-slate-700 hover:text-white" data-day="Tue">Tue</button>
+                            <button type="button" onclick="toggleAddStdDayPill('Wed')" class="add-std-day-pill px-1.5 py-0.5 rounded text-[10px] font-bold bg-slate-800 text-slate-400 border border-slate-700 hover:text-white" data-day="Wed">Wed</button>
+                            <button type="button" onclick="toggleAddStdDayPill('Thu')" class="add-std-day-pill px-1.5 py-0.5 rounded text-[10px] font-bold bg-slate-800 text-slate-400 border border-slate-700 hover:text-white" data-day="Thu">Thu</button>
+                            <button type="button" onclick="toggleAddStdDayPill('Fri')" class="add-std-day-pill px-1.5 py-0.5 rounded text-[10px] font-bold bg-slate-800 text-slate-400 border border-slate-700 hover:text-white" data-day="Fri">Fri</button>
+                            <button type="button" onclick="toggleAddStdDayPill('Sat')" class="add-std-day-pill px-1.5 py-0.5 rounded text-[10px] font-bold bg-slate-800 text-slate-400 border border-slate-700 hover:text-white" data-day="Sat">Sat</button>
+                            <button type="button" onclick="toggleAddStdDayPill('Sun')" class="add-std-day-pill px-1.5 py-0.5 rounded text-[10px] font-bold bg-slate-800 text-slate-400 border border-slate-700 hover:text-white" data-day="Sun">Sun</button>
+                        </div>
                     </div>
                     <div>
-                        <label class="block text-slate-300 font-semibold mb-1">Lesson Day(s) <span class="text-rose-400">*</span></label>
-                        <input type="text" id="addStdDays" required placeholder="e.g. Tue or Tue, Sat" class="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-white font-semibold placeholder-slate-500">
-                    </div>
-                    <div>
-                        <label class="block text-slate-300 font-semibold mb-1">Parent Country / Timezone</label>
+                        <label class="block text-slate-300 font-semibold mb-1">Parent Timezone</label>
                         <select id="addStdTimezone" onchange="onAddTimezoneCountryChange()" class="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-white font-medium text-xs">
                         </select>
+                        <div class="mt-2">
+                            <label class="block text-slate-400 text-[10px] font-semibold mb-0.5">Enrollment Status</label>
+                            <select id="addStdStatus" class="w-full bg-slate-800 border border-slate-700 rounded-lg px-2.5 py-1 text-white font-bold text-xs">
+                                <option value="ACTIVE" selected>ACTIVE</option>
+                                <option value="PAUSE">PAUSED</option>
+                                <option value="Done">DONE</option>
+                            </select>
+                        </div>
                     </div>
                 </div>
                 <!-- Dual Time Synchronizer: Student Country Time + Hour Difference + Nigeria Admin Time -->
@@ -1670,21 +1711,40 @@
                 <!-- Select Student or New -->
                 <div>
                     <label class="block text-slate-300 font-semibold mb-1">Select Student <span class="text-rose-400">*</span></label>
-                    <select id="addLessonStudentSelect" onchange="onAddLessonStudentSelect()" required class="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-white focus:border-indigo-500 focus:outline-none">
+                    <select id="addLessonStudentSelect" onchange="onAddLessonStudentSelect()" required class="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-white font-semibold focus:border-indigo-500 focus:outline-none">
                         <option value="">-- Choose Existing Student or Select New --</option>
                         <option value="__NEW__">➕ Add As New / Guest Student</option>
                     </select>
                 </div>
 
+                <!-- Lecture Action Mode (When Student is Selected) -->
+                <div id="addLessonSlotModeWrap" class="p-3 bg-indigo-950/40 rounded-xl border border-indigo-700/50 flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs">
+                    <span class="text-indigo-300 font-bold">Lecture Action:</span>
+                    <div class="flex items-center gap-3">
+                        <label class="flex items-center gap-1.5 cursor-pointer text-slate-200 hover:text-white font-semibold">
+                            <input type="radio" name="addLessonSlotMode" value="NEW_SLOT" checked class="text-indigo-600 focus:ring-indigo-500">
+                            <span>➕ Add New Class Slot</span>
+                        </label>
+                        <label class="flex items-center gap-1.5 cursor-pointer text-slate-200 hover:text-white font-semibold">
+                            <input type="radio" name="addLessonSlotMode" value="UPDATE_EXISTING" class="text-indigo-600 focus:ring-indigo-500">
+                            <span>✏️ Modify Existing Class Slot</span>
+                        </label>
+                    </div>
+                </div>
+
                 <!-- Student & Parent details -->
                 <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     <div>
-                        <label class="block text-slate-300 font-semibold mb-1">Student Child Name</label>
-                        <input type="text" id="addLessonChild" required placeholder="e.g. Samuel" class="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-white placeholder-slate-500">
+                        <label class="block text-slate-300 font-semibold mb-1">Student Child Name <span class="text-rose-400">*</span></label>
+                        <input type="text" id="addLessonChild" required placeholder="e.g. Samuel" class="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-white placeholder-slate-500 font-semibold">
                     </div>
                     <div>
-                        <label class="block text-slate-300 font-semibold mb-1">Parent Name</label>
-                        <input type="text" id="addLessonParent" required placeholder="e.g. Mrs. Ade" class="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-white placeholder-slate-500">
+                        <label class="block text-slate-300 font-semibold mb-1">Assign / Linked Parent</label>
+                        <select id="addLessonParentSelect" onchange="onAddLessonParentSelectChange()" class="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-white font-semibold mb-1 focus:border-indigo-500">
+                            <option value="">-- Select Existing Parent --</option>
+                            <option value="__NEW__">➕ Add New Parent</option>
+                        </select>
+                        <input type="text" id="addLessonParent" required placeholder="e.g. Mrs. Ade" class="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-1.5 text-white placeholder-slate-500 text-xs">
                     </div>
                 </div>
 
@@ -1695,7 +1755,7 @@
                     </div>
                     <div>
                         <label class="block text-slate-300 font-semibold mb-1">Assigned Teacher <span class="text-rose-400">*</span></label>
-                        <select id="addLessonTeacher" required class="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-white focus:border-indigo-500 focus:outline-none"></select>
+                        <select id="addLessonTeacher" required class="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-white focus:border-indigo-500 focus:outline-none font-semibold"></select>
                     </div>
                     <div>
                         <label class="block text-slate-300 font-semibold mb-1">Assigned Admin</label>
@@ -1706,12 +1766,18 @@
                 <!-- Date, Day & Time -->
                 <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
                     <div>
-                        <label class="block text-slate-300 font-semibold mb-1">Lesson Date</label>
-                        <input type="date" id="addLessonDate" onchange="onAddLessonDateChange()" class="w-full bg-slate-800 border border-slate-700 rounded-lg px-2.5 py-2 text-white font-mono text-xs">
+                        <div class="flex items-center justify-between mb-1">
+                            <label class="block text-slate-300 font-semibold">Lesson Date</label>
+                            <div class="flex items-center gap-1">
+                                <button type="button" onclick="setAddLessonQuickDate(0)" class="px-1.5 py-0.5 rounded text-[9px] font-bold bg-slate-800 text-indigo-400 border border-slate-700 hover:bg-slate-700">Today</button>
+                                <button type="button" onclick="setAddLessonQuickDate(1)" class="px-1.5 py-0.5 rounded text-[9px] font-bold bg-slate-800 text-pink-400 border border-slate-700 hover:bg-slate-700">Tmrw</button>
+                            </div>
+                        </div>
+                        <input type="date" id="addLessonDate" onchange="onAddLessonDateChange()" class="w-full bg-slate-800 border border-slate-700 rounded-lg px-2.5 py-2 text-white font-mono text-xs focus:border-indigo-500">
                     </div>
                     <div>
-                        <label class="block text-slate-300 font-semibold mb-1">Day of Week</label>
-                        <select id="addLessonDay" required class="w-full bg-slate-800 border border-slate-700 rounded-lg px-2.5 py-2 text-white font-semibold">
+                        <label class="block text-slate-300 font-semibold mb-1">Day of Week <span class="text-rose-400">*</span></label>
+                        <select id="addLessonDay" required class="w-full bg-slate-800 border border-slate-700 rounded-lg px-2.5 py-2 text-white font-semibold focus:border-indigo-500">
                             <option value="Monday">Monday</option>
                             <option value="Tuesday">Tuesday</option>
                             <option value="Wednesday">Wednesday</option>
@@ -2140,9 +2206,17 @@
                 <button onclick="closeModal('addRescheduleModal')" class="text-slate-400 hover:text-white p-1 rounded-lg hover:bg-slate-800 transition text-lg">&times;</button>
             </div>
             <form id="addReschForm" onsubmit="handleSaveManualReschedule(event)" class="space-y-3.5 text-xs">
+                <div>
+                    <label class="block text-slate-300 font-semibold mb-1">Select Student to Reschedule <span class="text-rose-400">*</span></label>
+                    <select id="addReschStudentSelect" onchange="onAddReschStudentSelectChange()" class="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2 text-white font-semibold focus:border-pink-500 mb-2">
+                        <option value="">-- Choose Existing Student --</option>
+                        <option value="__CUSTOM__">➕ Enter Custom Student</option>
+                    </select>
+                </div>
+
                 <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     <div>
-                        <label class="block text-slate-300 font-semibold mb-1">Student Name</label>
+                        <label class="block text-slate-300 font-semibold mb-1">Student Name <span class="text-rose-400">*</span></label>
                         <input type="text" id="addReschStudent" required placeholder="e.g. Kitan" oninput="onAddReschStudentInput()" class="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2 text-white font-bold">
                     </div>
                     <div>
@@ -2151,10 +2225,20 @@
                     </div>
                 </div>
 
-                <div class="grid grid-cols-2 gap-3">
+                <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
                     <div>
-                        <label class="block text-slate-300 font-semibold mb-1">Rescheduled Day</label>
-                        <select id="addReschDay" required class="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2 text-white font-medium">
+                        <div class="flex items-center justify-between mb-1">
+                            <label class="block text-slate-300 font-semibold">Rescheduled Date</label>
+                            <div class="flex items-center gap-1">
+                                <button type="button" onclick="setAddReschQuickDate(0)" class="px-1.5 py-0.5 rounded text-[9px] font-bold bg-slate-800 text-pink-400 border border-slate-700 hover:bg-slate-700">Today</button>
+                                <button type="button" onclick="setAddReschQuickDate(1)" class="px-1.5 py-0.5 rounded text-[9px] font-bold bg-slate-800 text-purple-400 border border-slate-700 hover:bg-slate-700">Tmrw</button>
+                            </div>
+                        </div>
+                        <input type="date" id="addReschDate" onchange="onAddReschDateChange()" class="w-full bg-slate-800 border border-slate-700 rounded-xl px-2.5 py-2 text-white font-mono text-xs focus:border-pink-500">
+                    </div>
+                    <div>
+                        <label class="block text-slate-300 font-semibold mb-1">Rescheduled Day <span class="text-rose-400">*</span></label>
+                        <select id="addReschDay" required class="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2 text-white font-medium focus:border-pink-500">
                             <option value="Monday">Monday</option>
                             <option value="Tuesday">Tuesday</option>
                             <option value="Wednesday">Wednesday</option>
@@ -2399,8 +2483,11 @@
                     </div>
                 </div>
 
-                <div class="flex justify-end space-x-2 pt-3 border-t border-slate-800">
+                <div class="flex flex-wrap items-center justify-end gap-2 pt-3 border-t border-slate-800">
                     <button type="button" onclick="closeModal('addParentModal')" class="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 font-semibold transition cursor-pointer">Cancel</button>
+                    <button type="button" onclick="handleSaveParentAndEnrollChild(event)" class="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold transition shadow-lg shadow-emerald-600/30 cursor-pointer flex items-center gap-1.5">
+                        <span>➕</span><span>Save &amp; Enroll Child</span>
+                    </button>
                     <button type="submit" class="px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-bold transition shadow-lg shadow-indigo-600/30 cursor-pointer">Save Parent Profile</button>
                 </div>
             </form>
@@ -2834,6 +2921,11 @@
     try {
         DELETED_RESCHEDULES = JSON.parse(localStorage.getItem('prosper_deleted_reschedules') || '[]');
     } catch(e) { DELETED_RESCHEDULES = []; }
+
+    let DELETED_PARENTS = [];
+    try {
+        DELETED_PARENTS = JSON.parse(localStorage.getItem('prosper_deleted_parents') || '[]');
+    } catch(e) { DELETED_PARENTS = []; }
 
     function getDayInfo(offsetDays = 0) {
         const fullDays = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
@@ -3767,10 +3859,16 @@
             populateAdminSelects();
         }
         if (id === 'addStudentModal') {
+            populateParentSelects();
             populateTimezoneSelect('addStdTimezone', 'Africa/Lagos');
             onAddTimezoneCountryChange();
         }
+        if (id === 'addLessonModal') {
+            populateParentSelects();
+            populateStudentSelects();
+        }
         if (id === 'addRescheduleModal') {
+            populateRescheduleStudentSelect();
             populateTimezoneSelect('addReschTimezone', 'Africa/Lagos');
             onAddReschCountryChange();
         }
@@ -3791,11 +3889,44 @@
         }
     }
 
-    function openAddStudentModal() {
+    function openAddStudentModal(prefilledParentName, prefilledParentPhone, prefilledParentId) {
         populateTeacherSelects();
         populateAdminSelects();
+        populateParentSelects();
         const form = document.getElementById('addStudentForm');
         if (form) form.reset();
+
+        selectedAddStdDays = ['Monday'];
+        updateAddStdDayPillsUI();
+        const daySel = document.getElementById('addStdDaySelect');
+        if (daySel) daySel.value = 'Monday';
+        const dayHidden = document.getElementById('addStdDays');
+        if (dayHidden) dayHidden.value = 'Monday';
+
+        setAddStdQuickDate(0);
+
+        if (prefilledParentName) {
+            const pSel = document.getElementById('addStdParentSelect');
+            if (pSel) {
+                let opt = Array.from(pSel.options).find(o => o.value.toLowerCase() === prefilledParentName.toLowerCase());
+                if (!opt) {
+                    opt = new Option(prefilledParentName + (prefilledParentPhone ? ` (${prefilledParentPhone})` : ''), prefilledParentName);
+                    pSel.appendChild(opt);
+                }
+                pSel.value = prefilledParentName;
+            }
+            const pInp = document.getElementById('addStdParent');
+            if (pInp) pInp.value = prefilledParentName;
+            if (prefilledParentPhone) {
+                const phInp = document.getElementById('addStdPhone');
+                if (phInp) phInp.value = prefilledParentPhone;
+            }
+            const wrap = document.getElementById('addStdNewParentWrap');
+            if (wrap) wrap.classList.add('hidden');
+        } else {
+            const wrap = document.getElementById('addStdNewParentWrap');
+            if (wrap) wrap.classList.add('hidden');
+        }
         openModal('addStudentModal');
     }
 
@@ -4265,12 +4396,267 @@
         if (currentVal) sel.value = currentVal;
     }
 
+    function populateParentSelects() {
+        const parents = (appState.parents || []).slice().sort((a,b) => (a.name || '').localeCompare(b.name || ''));
+        
+        // 1. Populate addStdParentSelect (in addStudentModal)
+        const stdParentSel = document.getElementById('addStdParentSelect');
+        if (stdParentSel) {
+            const cur = stdParentSel.value;
+            stdParentSel.innerHTML = `
+                <option value="">-- Choose Existing Parent --</option>
+                <option value="__NEW__">➕ Add New Parent</option>
+            `;
+            parents.forEach(p => {
+                if (!p || !p.name) return;
+                const opt = document.createElement('option');
+                opt.value = p.name;
+                opt.textContent = `${p.name} ${p.phone ? '(' + p.phone + ')' : ''}`;
+                opt.dataset.phone = p.phone || '';
+                opt.dataset.id = p.id || '';
+                stdParentSel.appendChild(opt);
+            });
+            if (cur) stdParentSel.value = cur;
+        }
+
+        // 2. Populate addLessonParentSelect (in addLessonModal)
+        const lessonParentSel = document.getElementById('addLessonParentSelect');
+        if (lessonParentSel) {
+            const curL = lessonParentSel.value;
+            lessonParentSel.innerHTML = `
+                <option value="">-- Select Existing Parent --</option>
+                <option value="__NEW__">➕ Add New Parent</option>
+            `;
+            parents.forEach(p => {
+                if (!p || !p.name) return;
+                const opt = document.createElement('option');
+                opt.value = p.name;
+                opt.textContent = `${p.name} ${p.phone ? '(' + p.phone + ')' : ''}`;
+                opt.dataset.phone = p.phone || '';
+                opt.dataset.id = p.id || '';
+                lessonParentSel.appendChild(opt);
+            });
+            if (curL) lessonParentSel.value = curL;
+        }
+    }
+
+    function onAddStdParentSelectChange() {
+        const sel = document.getElementById('addStdParentSelect');
+        const wrap = document.getElementById('addStdNewParentWrap');
+        const parentInp = document.getElementById('addStdParent');
+        const phoneInp = document.getElementById('addStdPhone');
+        if (!sel) return;
+        
+        if (sel.value === '__NEW__') {
+            if (wrap) wrap.classList.remove('hidden');
+            if (parentInp) {
+                parentInp.value = '';
+                parentInp.focus();
+            }
+            if (phoneInp && !phoneInp.value) phoneInp.value = '44';
+        } else if (sel.value) {
+            if (wrap) wrap.classList.add('hidden');
+            if (parentInp) parentInp.value = sel.value;
+            const selectedOpt = sel.options[sel.selectedIndex];
+            if (selectedOpt && selectedOpt.dataset.phone && phoneInp) {
+                phoneInp.value = selectedOpt.dataset.phone;
+            }
+        } else {
+            if (wrap) wrap.classList.add('hidden');
+            if (parentInp) parentInp.value = '';
+        }
+    }
+
+    function onAddLessonParentSelectChange() {
+        const sel = document.getElementById('addLessonParentSelect');
+        const parentInp = document.getElementById('addLessonParent');
+        const phoneInp = document.getElementById('addLessonPhone');
+        if (!sel) return;
+        if (sel.value === '__NEW__') {
+            if (parentInp) {
+                parentInp.value = '';
+                parentInp.focus();
+            }
+        } else if (sel.value) {
+            if (parentInp) parentInp.value = sel.value;
+            const selectedOpt = sel.options[sel.selectedIndex];
+            if (selectedOpt && selectedOpt.dataset.phone && phoneInp) {
+                phoneInp.value = selectedOpt.dataset.phone;
+            }
+        }
+    }
+
+    function populateRescheduleStudentSelect() {
+        const sel = document.getElementById('addReschStudentSelect');
+        if (!sel) return;
+        const cur = sel.value;
+        sel.innerHTML = `
+            <option value="">-- Choose Existing Student --</option>
+            <option value="__CUSTOM__">➕ Enter Custom Student</option>
+        `;
+        const list = getUniqueStudentsList();
+        list.forEach(s => {
+            const opt = document.createElement('option');
+            opt.value = s.id;
+            opt.textContent = `${s.child_name} (Parent: ${s.parent_name || 'N/A'} • Teacher: ${s.teacher || 'Unassigned'} • ${s.days || ''} ${s.time || ''})`;
+            sel.appendChild(opt);
+        });
+        if (cur) sel.value = cur;
+    }
+
+    function onAddReschStudentSelectChange() {
+        const sel = document.getElementById('addReschStudentSelect');
+        if (!sel) return;
+        const val = sel.value;
+        const nameInp = document.getElementById('addReschStudent');
+        const parentInp = document.getElementById('addReschParent');
+        const teacherSel = document.getElementById('addReschTeacher');
+        const adminSel = document.getElementById('addReschAdmin');
+        const origInp = document.getElementById('addReschOrig');
+        const stdTimeInp = document.getElementById('addReschStdTime');
+        
+        if (val === '__CUSTOM__' || !val) {
+            if (val === '__CUSTOM__' && nameInp) {
+                nameInp.value = '';
+                nameInp.focus();
+            }
+            return;
+        }
+
+        const student = appState.students.find(s => s.id === val);
+        if (student) {
+            if (nameInp) nameInp.value = student.child_name || '';
+            if (parentInp) parentInp.value = `${student.parent_name || 'Parent'} ${student.whatsapp ? '(' + student.whatsapp + ')' : ''}`;
+            if (teacherSel && student.teacher) teacherSel.value = student.teacher;
+            if (adminSel && student.admin) adminSel.value = student.admin;
+            if (origInp) origInp.value = `${student.days || 'Regular'} ${student.time || ''}`;
+            if (stdTimeInp && student.time) {
+                stdTimeInp.value = student.time;
+                if (typeof onAddReschStdTimeInput === 'function') onAddReschStdTimeInput();
+            }
+        }
+    }
+
+    function setAddReschQuickDate(daysAhead = 0) {
+        const dateInp = document.getElementById('addReschDate');
+        if (!dateInp) return;
+        const d = new Date();
+        d.setDate(d.getDate() + daysAhead);
+        dateInp.value = d.toISOString().split('T')[0];
+        onAddReschDateChange();
+    }
+
+    function onAddReschDateChange() {
+        const dateInp = document.getElementById('addReschDate');
+        const daySel = document.getElementById('addReschDay');
+        if (!dateInp || !daySel || !dateInp.value) return;
+        const parts = dateInp.value.split('-');
+        if (parts.length === 3) {
+            const d = new Date(parseInt(parts[0]), parseInt(parts[1]) - 1, parseInt(parts[2]));
+            const fullDays = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+            daySel.value = fullDays[d.getDay()];
+        }
+    }
+
+    let selectedAddStdDays = ['Monday'];
+
+    function setAddStdQuickDate(daysAhead = 0) {
+        const dateInp = document.getElementById('addStdDate');
+        if (!dateInp) return;
+        const d = new Date();
+        d.setDate(d.getDate() + daysAhead);
+        dateInp.value = d.toISOString().split('T')[0];
+        onAddStdDateChange();
+    }
+
+    function onAddStdDateChange() {
+        const dateInp = document.getElementById('addStdDate');
+        const daySel = document.getElementById('addStdDaySelect');
+        const dayHidden = document.getElementById('addStdDays');
+        if (!dateInp || !dateInp.value) return;
+        const parts = dateInp.value.split('-');
+        if (parts.length === 3) {
+            const d = new Date(parseInt(parts[0]), parseInt(parts[1]) - 1, parseInt(parts[2]));
+            const fullDays = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+            const dayName = fullDays[d.getDay()];
+            if (daySel) daySel.value = dayName;
+            if (dayHidden) dayHidden.value = dayName;
+            selectedAddStdDays = [dayName.substring(0, 3)];
+            updateAddStdDayPillsUI();
+        }
+    }
+
+    function onAddStdDaySelectChange() {
+        const daySel = document.getElementById('addStdDaySelect');
+        const dayHidden = document.getElementById('addStdDays');
+        if (!daySel) return;
+        if (daySel.value === '__CUSTOM__') {
+            if (dayHidden) dayHidden.value = selectedAddStdDays.join(', ') || 'Monday';
+        } else {
+            if (dayHidden) dayHidden.value = daySel.value;
+            selectedAddStdDays = [daySel.value.substring(0, 3)];
+            updateAddStdDayPillsUI();
+        }
+    }
+
+    function toggleAddStdDayPill(dayShort) {
+        const idx = selectedAddStdDays.indexOf(dayShort);
+        if (idx > -1) {
+            if (selectedAddStdDays.length > 1) {
+                selectedAddStdDays.splice(idx, 1);
+            }
+        } else {
+            selectedAddStdDays.push(dayShort);
+        }
+        updateAddStdDayPillsUI();
+        const daySel = document.getElementById('addStdDaySelect');
+        const dayHidden = document.getElementById('addStdDays');
+        const formatted = selectedAddStdDays.join(', ');
+        if (dayHidden) dayHidden.value = formatted;
+        if (daySel) {
+            if (selectedAddStdDays.length === 1) {
+                const dayMap = { Mon: 'Monday', Tue: 'Tuesday', Wed: 'Wednesday', Thu: 'Thursday', Fri: 'Friday', Sat: 'Saturday', Sun: 'Sunday' };
+                daySel.value = dayMap[selectedAddStdDays[0]] || 'Monday';
+            } else {
+                daySel.value = '__CUSTOM__';
+            }
+        }
+    }
+
+    function updateAddStdDayPillsUI() {
+        document.querySelectorAll('.add-std-day-pill').forEach(btn => {
+            const d = btn.getAttribute('data-day');
+            if (selectedAddStdDays.includes(d)) {
+                btn.classList.add('bg-emerald-600', 'text-white', 'border-emerald-500');
+                btn.classList.remove('bg-slate-800', 'text-slate-400', 'border-slate-700');
+            } else {
+                btn.classList.remove('bg-emerald-600', 'text-white', 'border-emerald-500');
+                btn.classList.add('bg-slate-800', 'text-slate-400', 'border-slate-700');
+            }
+        });
+    }
+
+    function setAddLessonQuickDate(daysAhead = 0) {
+        const dateInp = document.getElementById('addLessonDate');
+        if (!dateInp) return;
+        const d = new Date();
+        d.setDate(d.getDate() + daysAhead);
+        dateInp.value = d.toISOString().split('T')[0];
+        onAddLessonDateChange();
+    }
+
+    function handleSaveParentAndEnrollChild(e) {
+        window._saveParentThenAssignStudent = true;
+        handleSaveNewParent(e);
+    }
+
     function onAddLessonStudentSelect() {
         const sel = document.getElementById('addLessonStudentSelect');
         if (!sel) return;
         const val = sel.value;
         const childInp = document.getElementById('addLessonChild');
         const parentInp = document.getElementById('addLessonParent');
+        const parentSel = document.getElementById('addLessonParentSelect');
         const phoneInp = document.getElementById('addLessonPhone');
         const teacherSel = document.getElementById('addLessonTeacher');
         const meetInp = document.getElementById('addLessonMeet');
@@ -4288,6 +4674,10 @@
         if (student) {
             if (childInp) childInp.value = student.child_name || '';
             if (parentInp) parentInp.value = student.parent_name || '';
+            if (parentSel && student.parent_name) {
+                const opt = Array.from(parentSel.options).find(o => o.value.toLowerCase() === student.parent_name.toLowerCase());
+                if (opt) parentSel.value = opt.value;
+            }
             if (phoneInp) phoneInp.value = student.whatsapp || '';
             if (teacherSel && student.teacher) teacherSel.value = student.teacher;
             const adminSel = document.getElementById('addLessonAdmin');
@@ -4312,20 +4702,35 @@
         }
     }
 
-    function openAddLessonModal(defaultCategory = 'WEEKLY') {
+    function openAddLessonModal(defaultCategory = 'WEEKLY', preselectedStudentId = null) {
         populateTeacherSelects();
         populateStudentSelects();
         populateAdminSelects();
-        const todayIso = new Date().toISOString().split('T')[0];
-        const dateInp = document.getElementById('addLessonDate');
-        if (dateInp) {
-            dateInp.value = todayIso;
-            onAddLessonDateChange();
-        }
+        populateParentSelects();
+
         const catRadios = document.getElementsByName('lessonCategory');
         for (let r of catRadios) {
             if (r.value === defaultCategory) r.checked = true;
         }
+
+        const dateInp = document.getElementById('addLessonDate');
+        if (dateInp && !dateInp.value) {
+            setAddLessonQuickDate(0);
+        }
+
+        if (preselectedStudentId) {
+            const stdSel = document.getElementById('addLessonStudentSelect');
+            if (stdSel) {
+                stdSel.value = preselectedStudentId;
+                onAddLessonStudentSelect();
+            }
+            const newSlotRadio = document.querySelector('input[name="addLessonSlotMode"][value="NEW_SLOT"]');
+            if (newSlotRadio) newSlotRadio.checked = true;
+        } else {
+            const stdSel = document.getElementById('addLessonStudentSelect');
+            if (stdSel) stdSel.value = '';
+        }
+
         openModal('addLessonModal');
     }
 
@@ -4387,24 +4792,56 @@
             appState.trials.unshift(newTr);
             try { localStorage.setItem(DB_KEY_TRIALS, JSON.stringify(appState.trials)); } catch(err){}
             pushUpdateToCloud('reschedule', newTr);
+            showToast(`✓ Rescheduled session booked for ${child} on ${day} at ${time}`);
         } else {
-            // Regular weekly lesson: update existing student or create new
-            let existing = appState.students.find(s => s.id === studentSelect);
-            if (!existing && child) {
-                existing = appState.students.find(s => s.child_name.toLowerCase() === child.toLowerCase());
-            }
+            const slotMode = document.querySelector('input[name="addLessonSlotMode"]:checked')?.value || 'NEW_SLOT';
 
-            if (existing) {
-                existing.teacher = teacher;
-                existing.days = day.substring(0, 3);
-                existing.time = time;
-                existing.admin = admin;
-                if (meet) existing.meet_link = meet;
-                if (parent) existing.parent_name = parent;
-                if (phone) existing.whatsapp = phone;
-                try { localStorage.setItem(DB_KEY_STUDENTS, JSON.stringify(appState.students)); } catch(err){}
-                pushUpdateToCloud('edit_student', existing);
+            if (slotMode === 'UPDATE_EXISTING') {
+                let existing = appState.students.find(s => s.id === studentSelect);
+                if (!existing && child) {
+                    existing = appState.students.find(s => s.child_name.toLowerCase() === child.toLowerCase());
+                }
+
+                if (existing) {
+                    existing.teacher = teacher;
+                    existing.days = day.substring(0, 3);
+                    existing.time = time;
+                    existing.admin = admin;
+                    if (meet) existing.meet_link = meet;
+                    if (parent) existing.parent_name = parent;
+                    if (phone) existing.whatsapp = phone;
+                    try { localStorage.setItem(DB_KEY_STUDENTS, JSON.stringify(appState.students)); } catch(err){}
+                    pushUpdateToCloud('edit_student', existing);
+                    showToast(`✓ Updated lecture slot for ${child} (${day} at ${time})`);
+                } else {
+                    const newS = {
+                        id: 'SCH-' + String(Date.now()).slice(-4),
+                        child_name: child,
+                        parent_name: parent || 'Parent',
+                        whatsapp: phone || '',
+                        teacher: teacher,
+                        days: day.substring(0, 3),
+                        time: time,
+                        instrument: instrument,
+                        level: 'Intermediate',
+                        status: 'ACTIVE',
+                        lesson_start: lessonDate || new Date().toISOString().split('T')[0],
+                        admin: admin,
+                        meet_link: meet,
+                        zoom_link: '',
+                        rate: 15,
+                        fee: 60,
+                        attended: 0,
+                        missed: 0,
+                        attendance: [0, 0, 0, 0]
+                    };
+                    appState.students.unshift(newS);
+                    try { localStorage.setItem(DB_KEY_STUDENTS, JSON.stringify(appState.students)); } catch(err){}
+                    pushUpdateToCloud('new_student', newS);
+                    showToast(`✓ Saved lecture for ${child} (${day} at ${time})`);
+                }
             } else {
+                // NEW_SLOT: Add as an additional / new lecture slot for this child
                 const newS = {
                     id: 'SCH-' + String(Date.now()).slice(-4),
                     child_name: child,
@@ -4429,6 +4866,7 @@
                 appState.students.unshift(newS);
                 try { localStorage.setItem(DB_KEY_STUDENTS, JSON.stringify(appState.students)); } catch(err){}
                 pushUpdateToCloud('new_student', newS);
+                showToast(`✓ Added new lecture slot for ${child} (${day} at ${time})`);
             }
         }
 
@@ -5104,6 +5542,9 @@
                         <span>📋 History</span>
                     </button>
                     <div class="flex items-center space-x-1">
+                        <button onclick="openAddLessonModal('WEEKLY', '${s.id}')" class="px-2 py-1.5 rounded-lg bg-indigo-600/20 hover:bg-indigo-600 text-indigo-300 hover:text-white text-xs font-bold border border-indigo-500/30 transition-all flex items-center space-x-0.5 cursor-pointer" title="Add Another Lecture Slot for ${s.child_name}">
+                            <span>➕</span><span>Lecture</span>
+                        </button>
                         <button onclick="openRescheduleModal('${s.id}')" class="px-2 py-1.5 rounded-lg bg-pink-600/20 hover:bg-pink-600 text-pink-300 hover:text-white text-xs font-semibold border border-pink-500/30 transition-all">
                             Reschedule
                         </button>
@@ -5404,11 +5845,12 @@
                         <!-- Assigned Admin -->
                         <div class="space-y-1">
                             <span class="text-[10px] font-extrabold text-slate-400 uppercase tracking-wider block">Assigned Admin</span>
-                            <div class="flex items-center space-x-2">
-                                <span class="px-3 py-1 rounded-lg text-xs font-bold ${cls.admin && cls.admin !== 'Not Yet Assigned' ? 'bg-cyan-950/80 text-cyan-300 border border-cyan-700/60 shadow-[0_0_10px_rgba(6,182,212,0.2)]' : 'bg-amber-950/90 text-amber-300 border border-amber-600/50'}">
+                            <div class="flex items-center space-x-1.5 flex-wrap">
+                                <span class="px-2.5 py-1 rounded-lg text-xs font-bold ${cls.admin && cls.admin !== 'Not Yet Assigned' ? 'bg-cyan-950/80 text-cyan-300 border border-cyan-700/60 shadow-[0_0_10px_rgba(6,182,212,0.2)]' : 'bg-amber-950/90 text-amber-300 border border-amber-600/50'}">
                                     ${cls.admin || 'Not Yet Assigned'}
                                 </span>
-                                <button onclick="openAssignAdminModal('${cls.id}')" class="px-2 py-1 rounded text-xs font-bold bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white border border-slate-700 cursor-pointer" title="Edit Admin">✏️</button>
+                                <button onclick="openAssignAdminModal('${cls.id}')" class="px-1.5 py-1 rounded text-xs font-bold bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white border border-slate-700 cursor-pointer" title="Edit Admin">✏️</button>
+                                <button onclick="deleteStudentClass('${cls.id}')" class="px-1.5 py-1 rounded text-xs font-bold bg-rose-950/50 hover:bg-rose-600 text-rose-300 hover:text-white border border-rose-800/50 cursor-pointer" title="Delete this specific lecture slot">🗑️</button>
                             </div>
                         </div>
                     </div>
@@ -5447,6 +5889,9 @@
 
                 <!-- RIGHT: Sleek Emoji-Only Action Icons -->
                 <div class="flex items-center justify-end space-x-2.5 pt-4 xl:pt-0 border-t xl:border-t-0 border-slate-800/90 flex-shrink-0">
+                    <button onclick="openAddLessonModal('WEEKLY', '${s.id}')" class="w-11 h-11 rounded-xl bg-emerald-950/60 hover:bg-emerald-600 text-emerald-300 hover:text-slate-950 text-base font-bold border border-emerald-500/40 transition-all flex items-center justify-center cursor-pointer shadow-md hover:scale-105" title="Add New Lecture Slot for ${s.child_name}">
+                        ➕
+                    </button>
                     <button onclick="openStudentHistoryModal('${s.id}')" class="w-11 h-11 rounded-xl bg-cyan-950/50 hover:bg-cyan-600 text-cyan-300 hover:text-slate-950 text-lg font-bold border border-cyan-500/40 transition-all flex items-center justify-center cursor-pointer shadow-[0_0_12px_rgba(6,182,212,0.15)] hover:scale-105" title="Student History Log">
                         📜
                     </button>
@@ -5614,6 +6059,9 @@
                     </span>
                 </td>
                 <td class="py-3 px-4 text-right space-x-1.5">
+                    <button onclick="openAddLessonModal('WEEKLY', '${s.id}')" class="px-2 py-1 rounded bg-emerald-600/30 hover:bg-emerald-600 text-emerald-300 hover:text-white text-[11px] font-bold border border-emerald-500/30 cursor-pointer" title="Add another lecture slot for ${s.child_name}">
+                        ➕ Lecture
+                    </button>
                     <button onclick="openEditStudentModal('${s.id}')" class="px-2.5 py-1 rounded bg-indigo-600/30 hover:bg-indigo-600 text-indigo-300 hover:text-white text-[11px] font-bold border border-indigo-500/30 cursor-pointer">
                         ✎ Edit
                     </button>
@@ -5636,11 +6084,19 @@
 
         const stdId = s.id || '';
         const stdName = (s.child_name || '').toLowerCase().trim();
+        const otherSlots = appState.students.filter(x => x.id !== studentId && x.child_name && x.child_name.toLowerCase().trim() === stdName);
 
         // Add to blacklist so GViz sync does not resurrect it
-        if (!DELETED_STUDENTS.some(d => (d.id && stdId && d.id === stdId) || (d.name && d.name === stdName))) {
-            DELETED_STUDENTS.push({ id: stdId, name: stdName });
-            try { localStorage.setItem('prosper_deleted_students', JSON.stringify(DELETED_STUDENTS)); } catch(e) {}
+        if (otherSlots.length === 0) {
+            if (!DELETED_STUDENTS.some(d => (d.id && stdId && d.id === stdId) || (d.name && d.name === stdName))) {
+                DELETED_STUDENTS.push({ id: stdId, name: stdName });
+                try { localStorage.setItem('prosper_deleted_students', JSON.stringify(DELETED_STUDENTS)); } catch(e) {}
+            }
+        } else {
+            if (!DELETED_STUDENTS.some(d => d.id && stdId && d.id === stdId)) {
+                DELETED_STUDENTS.push({ id: stdId, name: '' });
+                try { localStorage.setItem('prosper_deleted_students', JSON.stringify(DELETED_STUDENTS)); } catch(e) {}
+            }
         }
 
         // Remove from local state
@@ -6644,7 +7100,11 @@ Please let us know if you have any questions!`;
     function handleSaveNewStudent(e) {
         e.preventDefault();
         const child = document.getElementById('addStdChild').value.trim();
-        const parent = document.getElementById('addStdParent').value.trim();
+        let parent = (document.getElementById('addStdParent')?.value || '').trim();
+        const parentSel = document.getElementById('addStdParentSelect');
+        if (parentSel && parentSel.value && parentSel.value !== '__NEW__') {
+            parent = parentSel.value;
+        }
         const phone = document.getElementById('addStdPhone').value.trim();
         const teacher = document.getElementById('addStdTeacher').value;
         const status = (document.getElementById('addStdStatus')?.value || 'ACTIVE');
@@ -7806,10 +8266,18 @@ Please let us know if you have any questions!`;
                 // Single lecture: delete student schedule completely
                 const stdId = s.id || '';
                 const stdName = (s.child_name || '').toLowerCase().trim();
+                const otherSlots = appState.students.filter(x => x.id !== lectureId && x.child_name && x.child_name.toLowerCase().trim() === stdName);
 
-                if (!DELETED_STUDENTS.some(d => (d.id && stdId && d.id === stdId) || (d.name && d.name === stdName))) {
-                    DELETED_STUDENTS.push({ id: stdId, name: stdName });
-                    try { localStorage.setItem('prosper_deleted_students', JSON.stringify(DELETED_STUDENTS)); } catch(e){}
+                if (otherSlots.length === 0) {
+                    if (!DELETED_STUDENTS.some(d => (d.id && stdId && d.id === stdId) || (d.name && d.name === stdName))) {
+                        DELETED_STUDENTS.push({ id: stdId, name: stdName });
+                        try { localStorage.setItem('prosper_deleted_students', JSON.stringify(DELETED_STUDENTS)); } catch(e){}
+                    }
+                } else {
+                    if (!DELETED_STUDENTS.some(d => d.id && stdId && d.id === stdId)) {
+                        DELETED_STUDENTS.push({ id: stdId, name: '' });
+                        try { localStorage.setItem('prosper_deleted_students', JSON.stringify(DELETED_STUDENTS)); } catch(e){}
+                    }
                 }
 
                 appState.students = appState.students.filter(x => x.id !== lectureId);
@@ -7863,7 +8331,12 @@ Please let us know if you have any questions!`;
             const key = pName.toLowerCase().trim();
             const cleanSlug = key.replace(/[^a-z0-9]/g, '');
             const canonicalId = 'PAR-' + cleanSlug;
-            
+            const isDeleted = DELETED_PARENTS.some(d => 
+                (d.id && (d.id.toLowerCase() === canonicalId.toLowerCase())) ||
+                (d.name && d.name.toLowerCase() === key)
+            );
+            if (isDeleted) return;
+
             let p = parentMap.get(key);
             if (!p) {
                 p = {
@@ -8070,6 +8543,13 @@ Please let us know if you have any questions!`;
         renderLessonCards();
         updateRosterCounts();
         showToast(`✓ Parent Profile Saved & Synced: ${name}`);
+
+        if (window._saveParentThenAssignStudent) {
+            window._saveParentThenAssignStudent = false;
+            setTimeout(() => {
+                openAddStudentModal(newParent.name, newParent.phone, newParent.id);
+            }, 120);
+        }
     }
 
     function openEditParentModal(parentId) {
@@ -8148,6 +8628,13 @@ Please let us know if you have any questions!`;
         if (!p) return;
         if (!confirm(`Are you sure you want to delete parent record for ${p.name}? Note: Linked students will remain in the academy database.`)) {
             return;
+        }
+
+        const pId = p.id || '';
+        const pName = (p.name || '').toLowerCase().trim();
+        if (!DELETED_PARENTS.some(d => (d.id && pId && d.id === pId) || (d.name && d.name === pName))) {
+            DELETED_PARENTS.push({ id: pId, name: pName });
+            try { localStorage.setItem('prosper_deleted_parents', JSON.stringify(DELETED_PARENTS)); } catch(e){}
         }
 
         appState.parents = appState.parents.filter(x => x.id !== parentId);
@@ -8410,6 +8897,13 @@ Emmanuel Eze\tChief Eze\t+447812999005\tTeacher Sharon\tFriday\t04:00:pm\tPiano\
         } else if (payload.new) {
             const updated = payload.new;
             const updatedName = String(updated.name || '').trim().toLowerCase();
+            const updatedId = String(updated.id || '').trim().toLowerCase();
+            const isDel = DELETED_PARENTS.some(d => 
+                (d.id && updatedId && d.id.toLowerCase() === updatedId) ||
+                (d.name && updatedName && d.name.toLowerCase() === updatedName)
+            );
+            if (isDel) return;
+
             const idx = appState.parents.findIndex(p => 
                 (p.id && updated.id && String(p.id).toLowerCase() === String(updated.id).toLowerCase()) ||
                 (updatedName && p.name && p.name.trim().toLowerCase() === updatedName)
@@ -8439,6 +8933,13 @@ Emmanuel Eze\tChief Eze\t+447812999005\tTeacher Sharon\tFriday\t04:00:pm\tPiano\
             }
         } else if (payload.new) {
             const updated = payload.new;
+            const updatedId = String(updated.id || '').trim().toLowerCase();
+            const isDel = DELETED_STUDENTS.some(d => {
+                const dId = typeof d === 'object' ? (d.id || '').toLowerCase().trim() : d.toLowerCase().trim();
+                return dId && updatedId && dId === updatedId;
+            });
+            if (isDel) return;
+
             const updatedSlotKey = (typeof getStudentSlotKey === 'function') ? getStudentSlotKey(updated) : '';
             const idx = appState.students.findIndex(s => {
                 if (s.id && updated.id && String(s.id).toLowerCase() === String(updated.id).toLowerCase()) return true;
@@ -8586,14 +9087,31 @@ Emmanuel Eze\tChief Eze\t+447812999005\tTeacher Sharon\tFriday\t04:00:pm\tPiano\
         if (!cloudData) return;
         
         if (Array.isArray(cloudData.parents)) {
-            appState.parents = cloudData.parents;
+            appState.parents = cloudData.parents.filter(p => {
+                if (!p) return false;
+                const pName = (p.name || '').toLowerCase().trim();
+                const pId = (p.id || '').toLowerCase().trim();
+                return !DELETED_PARENTS.some(d => 
+                    (d.id && pId && d.id.toLowerCase() === pId) || 
+                    (d.name && pName && d.name.toLowerCase() === pName)
+                );
+            });
             if (typeof deduplicateParents === 'function') deduplicateParents();
             try { localStorage.setItem(DB_KEY_PARENTS, JSON.stringify(appState.parents)); } catch(e){}
             renderParentDatabase();
         }
 
         if (Array.isArray(cloudData.students)) {
-            appState.students = cloudData.students;
+            appState.students = cloudData.students.filter(s => {
+                if (!s) return false;
+                const sName = (s.child_name || '').toLowerCase().trim();
+                const sId = (s.id || '').toLowerCase().trim();
+                return !DELETED_STUDENTS.some(d => {
+                    const dName = typeof d === 'string' ? d.toLowerCase().trim() : (d.name || '').toLowerCase().trim();
+                    const dId = typeof d === 'object' ? (d.id || '').toLowerCase().trim() : d.toLowerCase().trim();
+                    return (dId && sId && dId === sId) || (dName && sName && dName === sName);
+                });
+            });
             if (typeof deduplicateStudents === 'function') deduplicateStudents();
             if (typeof deduplicateTeachers === 'function') deduplicateTeachers();
             try { localStorage.setItem(DB_KEY_STUDENTS, JSON.stringify(appState.students)); } catch(e){}
