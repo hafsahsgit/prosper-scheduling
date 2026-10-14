@@ -387,6 +387,9 @@
     <script>
         tailwind.config = {
             darkMode: 'class',
+            future: {
+                hoverOnlyWhenSupported: true,
+            },
             theme: {
                 extend: {
                     colors: {
@@ -423,6 +426,28 @@
             font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, sans-serif;
         }
 
+        /* Fast-Touch Button Optimization (Solves "Clicking thousand times to press" on mobile / touch) */
+        button, 
+        a, 
+        input[type="button"], 
+        input[type="submit"], 
+        [role="button"], 
+        .cursor-pointer,
+        .nav-tab {
+            touch-action: manipulation;
+            -webkit-tap-highlight-color: transparent;
+            user-select: none;
+            -webkit-user-select: none;
+            cursor: pointer;
+        }
+
+        /* Prevent child elements (icons, emojis, spans) from capturing clicks or blocking button triggers */
+        button > *, 
+        a > *, 
+        [role="button"] > * {
+            pointer-events: none;
+        }
+
         /* VirtualSOC Glassmorphic Panels */
         .conservatory-panel {
             background: rgba(15, 23, 42, 0.85);
@@ -430,12 +455,38 @@
             border: 1px solid rgba(30, 41, 59, 0.8);
             box-shadow: 0 10px 30px -10px rgba(0, 0, 0, 0.5);
             border-radius: 1rem;
-            transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+            transition: border-color 0.15s ease, box-shadow 0.15s ease;
         }
 
-        .conservatory-panel:hover {
-            border-color: rgba(6, 182, 212, 0.4);
-            box-shadow: 0 12px 35px -10px rgba(6, 182, 212, 0.18);
+        /* Only hover on devices that truly support hover with a pointer/mouse */
+        @media (hover: hover) and (pointer: fine) {
+            .conservatory-panel:hover {
+                border-color: rgba(6, 182, 212, 0.4);
+                box-shadow: 0 12px 35px -10px rgba(6, 182, 212, 0.18);
+            }
+        }
+
+        /* On touch devices (smartphones/tablets), eliminate sticky hover traps and slow button transitions */
+        @media (hover: none) or (pointer: coarse) {
+            .conservatory-panel:hover {
+                border-color: rgba(30, 41, 59, 0.8) !important;
+                box-shadow: 0 10px 30px -10px rgba(0, 0, 0, 0.5) !important;
+                transform: none !important;
+            }
+
+            button, a, [role="button"], .nav-tab {
+                transition-duration: 0ms !important;
+                transition-delay: 0ms !important;
+            }
+        }
+
+        /* Tactile instant response on press (0ms response) */
+        button:active, 
+        a:active, 
+        [role="button"]:active {
+            transform: scale(0.96) !important;
+            opacity: 0.85 !important;
+            transition-duration: 0ms !important;
         }
 
         /* Cyber Glow Badges */
@@ -5889,19 +5940,19 @@
 
                 <!-- RIGHT: Sleek Emoji-Only Action Icons -->
                 <div class="flex items-center justify-end space-x-2.5 pt-4 xl:pt-0 border-t xl:border-t-0 border-slate-800/90 flex-shrink-0">
-                    <button onclick="openAddLessonModal('WEEKLY', '${s.id}')" class="w-11 h-11 rounded-xl bg-emerald-950/60 hover:bg-emerald-600 text-emerald-300 hover:text-slate-950 text-base font-bold border border-emerald-500/40 transition-all flex items-center justify-center cursor-pointer shadow-md hover:scale-105" title="Add New Lecture Slot for ${s.child_name}">
+                    <button onclick="openAddLessonModal('WEEKLY', '${s.id}')" class="w-11 h-11 rounded-xl bg-emerald-950/60 hover:bg-emerald-600 text-emerald-300 hover:text-slate-950 text-base font-bold border border-emerald-500/40 transition-all flex items-center justify-center cursor-pointer shadow-md active:scale-95" title="Add New Lecture Slot for ${s.child_name}">
                         ➕
                     </button>
-                    <button onclick="openStudentHistoryModal('${s.id}')" class="w-11 h-11 rounded-xl bg-cyan-950/50 hover:bg-cyan-600 text-cyan-300 hover:text-slate-950 text-lg font-bold border border-cyan-500/40 transition-all flex items-center justify-center cursor-pointer shadow-[0_0_12px_rgba(6,182,212,0.15)] hover:scale-105" title="Student History Log">
+                    <button onclick="openStudentHistoryModal('${s.id}')" class="w-11 h-11 rounded-xl bg-cyan-950/50 hover:bg-cyan-600 text-cyan-300 hover:text-slate-950 text-lg font-bold border border-cyan-500/40 transition-all flex items-center justify-center cursor-pointer shadow-[0_0_12px_rgba(6,182,212,0.15)] active:scale-95" title="Student History Log">
                         📜
                     </button>
-                    <button onclick="openEditStudentModal('${s.id}')" class="w-11 h-11 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-lg font-bold border border-slate-700 transition-all flex items-center justify-center cursor-pointer shadow-md hover:scale-105" title="Edit Student & Schedule">
+                    <button onclick="openEditStudentModal('${s.id}')" class="w-11 h-11 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-lg font-bold border border-slate-700 transition-all flex items-center justify-center cursor-pointer shadow-md active:scale-95" title="Edit Student & Schedule">
                         ✏️
                     </button>
-                    <a href="https://wa.me/${s.whatsapp}" target="_blank" rel="noopener" class="w-11 h-11 rounded-xl bg-emerald-950/50 hover:bg-emerald-600 text-emerald-400 hover:text-slate-950 text-lg font-bold border border-emerald-500/40 transition-all flex items-center justify-center cursor-pointer shadow-[0_0_12px_rgba(16,185,129,0.15)] hover:scale-105" title="WhatsApp Parent">
+                    <a href="https://wa.me/${s.whatsapp}" target="_blank" rel="noopener" class="w-11 h-11 rounded-xl bg-emerald-950/50 hover:bg-emerald-600 text-emerald-400 hover:text-slate-950 text-lg font-bold border border-emerald-500/40 transition-all flex items-center justify-center cursor-pointer shadow-[0_0_12px_rgba(16,185,129,0.15)] active:scale-95" title="WhatsApp Parent">
                         💬
                     </a>
-                    <a href="${s.meet_link || 'https://meet.google.com/hds-oijm-vkn'}" target="_blank" rel="noopener" class="w-11 h-11 rounded-xl bg-gradient-to-r from-cyan-500 to-emerald-500 hover:from-cyan-400 hover:to-emerald-400 text-slate-950 text-lg font-bold transition-all shadow-[0_0_20px_rgba(6,182,212,0.3)] flex items-center justify-center cursor-pointer hover:scale-105" title="Google Meet Room">
+                    <a href="${s.meet_link || 'https://meet.google.com/hds-oijm-vkn'}" target="_blank" rel="noopener" class="w-11 h-11 rounded-xl bg-gradient-to-r from-cyan-500 to-emerald-500 hover:from-cyan-400 hover:to-emerald-400 text-slate-950 text-lg font-bold transition-all shadow-[0_0_20px_rgba(6,182,212,0.3)] flex items-center justify-center cursor-pointer active:scale-95" title="Google Meet Room">
                         🎥
                     </a>
                 </div>

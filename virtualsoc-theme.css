@@ -21,6 +21,28 @@ body {
     min-height: 100vh;
 }
 
+/* Fast-Touch Button Optimization (Solves "Clicking thousand times to press" on mobile / touch) */
+button, 
+a, 
+input[type="button"], 
+input[type="submit"], 
+[role="button"], 
+.cursor-pointer,
+.nav-tab {
+    touch-action: manipulation;
+    -webkit-tap-highlight-color: transparent;
+    user-select: none;
+    -webkit-user-select: none;
+    cursor: pointer;
+}
+
+/* Prevent child elements (icons, emojis, spans) from capturing clicks or blocking button triggers */
+button > *, 
+a > *, 
+[role="button"] > * {
+    pointer-events: none;
+}
+
 /* VirtualSOC Glassmorphic Panels */
 .conservatory-panel {
     background: rgba(15, 23, 42, 0.85);
@@ -28,12 +50,38 @@ body {
     border: 1px solid rgba(30, 41, 59, 0.8);
     box-shadow: 0 10px 30px -10px rgba(0, 0, 0, 0.5);
     border-radius: 1rem;
-    transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+    transition: border-color 0.15s ease, box-shadow 0.15s ease;
 }
 
-.conservatory-panel:hover {
-    border-color: rgba(6, 182, 212, 0.4);
-    box-shadow: 0 12px 35px -10px rgba(6, 182, 212, 0.18);
+/* Only hover on devices that truly support hover with a pointer/mouse */
+@media (hover: hover) and (pointer: fine) {
+    .conservatory-panel:hover {
+        border-color: rgba(6, 182, 212, 0.4);
+        box-shadow: 0 12px 35px -10px rgba(6, 182, 212, 0.18);
+    }
+}
+
+/* On touch devices (smartphones/tablets), eliminate sticky hover traps and slow button transitions */
+@media (hover: none) or (pointer: coarse) {
+    .conservatory-panel:hover {
+        border-color: rgba(30, 41, 59, 0.8) !important;
+        box-shadow: 0 10px 30px -10px rgba(0, 0, 0, 0.5) !important;
+        transform: none !important;
+    }
+
+    button, a, [role="button"], .nav-tab {
+        transition-duration: 0ms !important;
+        transition-delay: 0ms !important;
+    }
+}
+
+/* Tactile instant response on press (0ms response) */
+button:active, 
+a:active, 
+[role="button"]:active {
+    transform: scale(0.96) !important;
+    opacity: 0.85 !important;
+    transition-duration: 0ms !important;
 }
 
 /* Cyber Glow Badges */
